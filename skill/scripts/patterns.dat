@@ -1,0 +1,49 @@
+# Security Audit Scanner Patterns
+# Format: SEVERITY<TAB>PATTERN_ID<TAB>PATTERN_NAME<TAB>REGEX
+# Delimiter is TAB character. Everything after the 3rd tab is the regex.
+# Lines starting with # are comments. Empty lines are skipped.
+# Regexes should be grep -E (ERE) compatible for portability.
+CRITICAL	aws-access-key	AWS Access Key ID	(A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}
+CRITICAL	private-key-block	Private Key (PEM Block)	-----BEGIN[A-Z0-9 _-]*PRIVATE KEY
+CRITICAL	gcp-service-account	GCP Service Account Key	"type"\s*:\s*"service_account"
+CRITICAL	gcp-api-key	GCP API Key	AIza[0-9A-Za-z_-]{35}
+CRITICAL	stripe-secret-key	Stripe Secret Key	(sk|rk)_(test|live|prod)_[a-zA-Z0-9]{10,99}
+CRITICAL	azure-storage-key	Azure Storage Connection String	AccountKey=[A-Za-z0-9+/=]{86,}
+CRITICAL	azure-ad-secret	Azure AD Client Secret	[a-zA-Z0-9_~.]{3}[0-9]Q~[a-zA-Z0-9_~.-]{31,34}
+CRITICAL	db-root-password	Database Root/Admin Password	(root|admin)(.{0,20})password\s*[:=]\s*['"][^'"]{8,}['"]
+HIGH	github-pat-classic	GitHub PAT (Classic)	ghp_[0-9a-zA-Z]{36}
+HIGH	github-pat-fine	GitHub PAT (Fine-Grained)	github_pat_[0-9a-zA-Z_]{82}
+HIGH	github-oauth	GitHub OAuth Token	gho_[0-9a-zA-Z]{36}
+HIGH	gitlab-pat	GitLab PAT	glpat-[0-9a-zA-Z_-]{20}
+HIGH	gitlab-runner	GitLab Runner Token	glrt-[0-9a-zA-Z_-]{20}
+HIGH	slack-bot-token	Slack Bot Token	xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*
+HIGH	slack-webhook	Slack Webhook URL	hooks\.slack\.com/(services|workflows|triggers)/[A-Za-z0-9+/]{43,56}
+HIGH	sendgrid-key	SendGrid API Key	SG\.[a-zA-Z0-9=_.-]{66}
+HIGH	twilio-key	Twilio API Key	SK[0-9a-fA-F]{32}
+HIGH	db-connection-string	Database Connection String	(mongodb(\+srv)?|postgres(ql)?|mysql|redis|mssql|mariadb)://[^\s'"]{10,}
+HIGH	password-assignment	Password Assignment	(password|passwd|pwd)\s*[:=]\s*['"][^'"]{8,}['"]
+HIGH	heroku-key	Heroku API Key	HRKU-AA[0-9a-zA-Z_-]{58}
+HIGH	mailgun-key	Mailgun Private API Key	key-[a-f0-9]{32}
+HIGH	npm-token	NPM Access Token	npm_[a-z0-9]{36}
+HIGH	rubygems-token	Rubygems API Token	rubygems_[a-f0-9]{48}
+HIGH	openai-key	OpenAI API Key	sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{58,74}T3BlbkFJ
+MEDIUM	jwt-signing-secret	JWT Signing Secret	(jwt|token)[\s_-]*(secret|key)\s*[:=]\s*['"][^'"]{8,}['"]
+MEDIUM	generic-api-key	Generic API Key Assignment	(api[_-]?key|apikey|api[_-]?secret)\s*[:=]\s*['"][0-9a-zA-Z]{16,}['"]
+MEDIUM	generic-secret	Generic Secret/Token Assignment	(secret|token|credential|auth)[_-]?(key|token|secret)?\s*[:=]\s*['"][^'"]{12,}['"]
+MEDIUM	base64-secret	Base64-Encoded Secret	(secret|key|token|password)\s*[:=]\s*['"][A-Za-z0-9+/=]{40,}['"]
+MEDIUM	private-key-var	Private Key in Variable	(private[_-]?key|priv[_-]?key)\s*[:=]\s*['"][^'"]{20,}['"]
+MEDIUM	encryption-key	Encryption Key/IV	(encryption[_-]?key|aes[_-]?key|cipher[_-]?key)\s*[:=]\s*['"][0-9a-fA-F]{16,}['"]
+MEDIUM	sql-injection-concat	SQL Injection (String Concat)	(execute|query|raw|cursor\.execute)\s*\([^)]*(\+\s*[a-zA-Z]|\$\{|f['"])
+MEDIUM	sql-injection-build	SQL Injection (String Build)	(SELECT|INSERT|UPDATE|DELETE|DROP)\s+.{0,40}['"]\s*\+\s*[a-zA-Z]
+MEDIUM	xss-innerhtml	XSS (innerHTML/document.write)	(innerHTML|outerHTML|document\.write|document\.writeln)\s*[=(]
+MEDIUM	xss-react-dangerous	XSS (dangerouslySetInnerHTML)	dangerouslySetInnerHTML\s*=
+MEDIUM	insecure-deserialize	Insecure Deserialization	(pickle\.loads?|yaml\.load\s*\(|yaml\.unsafe_load|unserialize\s*\(|Marshal\.load|eval\s*\()
+MEDIUM	weak-crypto	Weak Cryptographic Algorithm	(MD5|SHA1|md5|sha1|DES|RC4|RC2)\s*[(.]
+MEDIUM	hardcoded-ip	Hardcoded IP in Config	(host|server|endpoint|address)\s*[:=]\s*['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}['"]
+MEDIUM	insecure-http	Insecure HTTP URL (Non-Local)	(url|endpoint|host|api|server|webhook)\s*[:=]\s*['"]http://[^'"]*['"]
+MEDIUM	command-injection	Command Injection	(exec|system|popen|subprocess\.call|subprocess\.run|child_process\.exec|os\.system|shell_exec)\s*\([^)]*(\+\s*[a-zA-Z]|\$\{|f['"])
+MEDIUM	ssrf-dynamic-url	SSRF (Dynamic URL)	(requests\.get|requests\.post|fetch|urllib|axios\.(get|post)|curl_exec)\s*\([^)]*(\+\s*[a-zA-Z]|\$\{|f['"])
+LOW	debug-enabled	Debug Mode Enabled	(debug|DEBUG)\s*[:=]\s*(true|True|1|['"]true['"])
+LOW	cors-wildcard	Permissive CORS (Wildcard)	(Access-Control-Allow-Origin|cors.*origin)\s*[:=]\s*['"]?\*['"]?
+LOW	ssl-verify-disabled	Disabled SSL/TLS Verification	(verify\s*[:=]\s*False|CURLOPT_SSL_VERIFYPEER\s*[:=]\s*(false|0)|rejectUnauthorized\s*[:=]\s*false|InsecureSkipVerify\s*[:=]\s*true)
+LOW	security-todo	Security TODO Comment	(TODO|FIXME|HACK|XXX).{0,50}(security|auth|password|secret|encrypt|vulnerability|csrf|xss|injection|sanitize)
