@@ -1,0 +1,88 @@
+# .security-audit.yml — Configuration for the security-audit skill
+#
+# Place this file in your repository root to customize scan behavior.
+# All fields are optional. Sensible defaults are applied when absent.
+#
+# Copy this file to your repo root and rename to .security-audit.yml
+
+# ─── Scan Mode ──────────────────────────────────────────────────────────────
+
+scan:
+  # full: scan all files in the repository
+  # incremental: only scan files changed vs base_branch (requires git)
+  # paths: only scan specific directories
+  mode: full
+
+  # Base branch for incremental mode (default: main)
+  base_branch: main
+
+  # Target directories for paths mode (ignored in full/incremental mode)
+  # paths:
+  #   - src/
+  #   - config/
+  #   - deploy/
+
+# ─── Exclusions ─────────────────────────────────────────────────────────────
+
+exclude:
+  # Directories to skip (added to built-in defaults like node_modules, .git, venv)
+  directories:
+    - vendor
+    - third_party
+    - generated
+
+  # File patterns to skip
+  files:
+    - "*.min.js"
+    - "*.min.css"
+    - "*.lock"
+    - "*.map"
+    - "*.bundle.js"
+
+  # Glob patterns for paths to skip entirely
+  patterns:
+    - "test_fixtures/**"
+    - "**/__snapshots__/**"
+
+# ─── Severity ───────────────────────────────────────────────────────────────
+
+severity:
+  # Only report findings at or above this severity level
+  # Options: critical, high, medium, low (default: low — report everything)
+  minimum: low
+
+# ─── Output ─────────────────────────────────────────────────────────────────
+
+output:
+  # Report format: markdown, sarif, or json (default: markdown)
+  format: markdown
+
+  # Output filename without extension (extension is added based on format)
+  # Default: security-report
+  file: security-report
+
+# ─── Custom Patterns ────────────────────────────────────────────────────────
+
+custom_patterns:
+  # Add your own secret detection patterns
+  # Each pattern needs: name, regex, severity (critical/high/medium/low)
+  secrets: []
+  #   - name: "Internal API Token"
+  #     regex: "MYCOMPANY_[A-Z0-9]{32}"
+  #     severity: critical
+  #
+  #   - name: "Internal Service Key"
+  #     regex: "svc_key_[a-zA-Z0-9]{40}"
+  #     severity: high
+
+  # Suppress known false positives
+  # Each entry can match by file path or by pattern in the matched value
+  allowlist: []
+  #   - file: "docs/api-examples.md"
+  #     reason: "Documentation examples with placeholder keys"
+  #
+  #   - file: "tests/fixtures/**"
+  #     reason: "Test fixtures with intentionally fake secrets"
+  #
+  #   - pattern: "EXAMPLE_KEY_.*"
+  #     reason: "Convention for placeholder keys in this project"
