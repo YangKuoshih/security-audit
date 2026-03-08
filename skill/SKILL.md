@@ -87,13 +87,13 @@ Review the raw findings from Phase 2 and for each finding:
 
 ### Phase 4: Report Generation
 
-**If shell access is available:**
+**If shell access is available (Python required):**
 
 ```bash
-bash "${SKILL_DIR}/scripts/generate-report.sh" "<findings_file>" "<format>" "<output_file>"
+python3 "${SKILL_DIR}/scripts/generate-report.py" "<findings_file>" "<format>" "<output_file>"
 ```
 
-Supported formats: `markdown`, `sarif`, `json`.
+Supported formats: `markdown`, `sarif`, `json`. Use `-` as output file for stdout.
 
 **If no shell access:**
 
@@ -149,7 +149,7 @@ Consult these for detailed patterns and classification rules:
 - **`scripts/scan-secrets.sh`** — primary bash-based pattern scanner
 - **`scripts/scan-secrets.py`** — Python fallback with entropy detection
 - **`scripts/patterns.dat`** — compiled patterns file used by scanner scripts
-- **`scripts/generate-report.sh`** — report formatter (Markdown, SARIF, JSON)
+- **`scripts/generate-report.py`** — report formatter (Markdown, SARIF, JSON) with built-in remediation guidance
 
 ### Examples
 
