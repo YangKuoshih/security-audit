@@ -7,6 +7,12 @@ description: >
   "audit codebase security", "find exposed secrets", or mentions security
   scanning of a codebase. Provides hybrid deterministic + LLM-assisted
   security scanning with severity-classified reports.
+license: Apache-2.0
+compatibility: Requires bash and grep for primary scanning, or Python 3 as fallback. Works without shell access in degraded mode.
+metadata:
+  author: Tony Yang
+  version: "0.1.0"
+  repository: https://github.com/YangKuoshih/security-audit
 ---
 
 # Security Audit
