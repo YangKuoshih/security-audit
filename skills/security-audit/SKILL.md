@@ -22,7 +22,7 @@ Execute the following four phases in order. Adapt based on environment capabilit
 1. Detect environment capabilities:
    - Shell access: attempt `echo "shell-ok"` via bash
    - Git available: attempt `git --version`
-   - Python available: attempt `python3 --version`
+   - Python available: attempt `python3 --version` or `python --version` (use whichever works)
 2. Check for `.security-audit.yml` in the repo root. If present, read and apply configuration. If absent, use defaults:
    - Scan mode: `full`
    - Excluded dirs: `node_modules`, `venv`, `.git`, `dist`, `build`, `__pycache__`, `.next`, `vendor`, `target`
@@ -42,15 +42,15 @@ Execute the following four phases in order. Adapt based on environment capabilit
 Run the bash scanner script:
 
 ```bash
-bash "${SKILL_DIR}/scripts/scan-secrets.sh" "<target_dir>" "${SKILL_DIR}/scripts/patterns.dat" "<output_file>"
+bash "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.sh" "<target_dir>" "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" "<output_file>"
 ```
 
 For incremental mode, add `--base-branch <branch>`.
 
-If bash scanning fails but Python is available, fall back to:
+If bash scanning fails but Python is available, fall back to (use `python3` or `python` depending on what is available):
 
 ```bash
-python3 "${SKILL_DIR}/scripts/scan-secrets.py" --target "<target_dir>" --patterns "${SKILL_DIR}/scripts/patterns.dat" --output "<output_file>"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.py" --target "<target_dir>" --patterns "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" --output "<output_file>"
 ```
 
 **If no shell access (fallback path):**
@@ -90,7 +90,7 @@ Review the raw findings from Phase 2 and for each finding:
 **If shell access is available (Python required):**
 
 ```bash
-python3 "${SKILL_DIR}/scripts/generate-report.py" "<findings_file>" "<format>" "<output_file>"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/generate-report.py" "<findings_file>" "<format>" "<output_file>"
 ```
 
 Supported formats: `markdown`, `sarif`, `json`. Use `-` as output file for stdout.

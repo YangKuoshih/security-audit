@@ -76,10 +76,12 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 claude plugin add security-audit
 ```
 
-**Or clone directly:**
+**Or clone and use locally:**
 ```bash
 git clone https://github.com/your-org/security-audit.git
-# Copy the skill/ directory to your platform's skills/plugins folder
+
+# Use as a Claude Code plugin (from any project directory)
+claude --plugin-dir /path/to/security-audit
 ```
 
 **Run it:**
@@ -208,21 +210,24 @@ See [`examples/security-audit.yml`](skill/examples/security-audit.yml) for all o
 
 ```
 security-audit/
-├── skill/                              # The distributable skill
-│   ├── SKILL.md                        # LLM orchestration and workflow
-│   ├── references/
-│   │   ├── secret-patterns.md          # 34 patterns (validated against GitLeaks)
-│   │   ├── vulnerability-patterns.md   # 15 patterns (mapped to OWASP Top 10)
-│   │   └── severity-guide.md           # Classification rules + adjustments
-│   ├── scripts/
-│   │   ├── scan-secrets.sh             # Bash scanner (grep, PCRE/ERE)
-│   │   ├── scan-secrets.py             # Python fallback + entropy detection
-│   │   ├── patterns.dat                # 44 compiled patterns for scanners
-│   │   └── generate-report.py          # Report generator (MD/SARIF/JSON)
-│   └── examples/
-│       ├── sample-report.md            # Example Markdown output
-│       ├── sample-report.sarif.json    # Example SARIF output
-│       └── security-audit.yml          # Example configuration
+├── .claude-plugin/
+│   └── plugin.json                     # Plugin manifest for Claude Code
+├── skills/
+│   └── security-audit/                 # The distributable skill
+│       ├── SKILL.md                    # LLM orchestration and workflow
+│       ├── references/
+│       │   ├── secret-patterns.md      # 34 patterns (validated against GitLeaks)
+│       │   ├── vulnerability-patterns.md   # 15 patterns (OWASP Top 10)
+│       │   └── severity-guide.md       # Classification rules + adjustments
+│       ├── scripts/
+│       │   ├── scan-secrets.sh         # Bash scanner (grep, PCRE/ERE)
+│       │   ├── scan-secrets.py         # Python fallback + entropy detection
+│       │   ├── patterns.dat            # 44 compiled patterns for scanners
+│       │   └── generate-report.py      # Report generator (MD/SARIF/JSON)
+│       └── examples/
+│           ├── sample-report.md        # Example Markdown output
+│           ├── sample-report.sarif.json    # Example SARIF output
+│           └── security-audit.yml      # Example configuration
 ├── tests/
 │   ├── test-e2e.sh                     # 58-assertion integration test
 │   └── fixtures/sample-repo/           # Test files with known secrets/vulns

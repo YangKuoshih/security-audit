@@ -1,0 +1,10 @@
+{
+  "name": "security-audit",
+  "version": "0.1.0",
+  "description": "Scan codebases for hardcoded secrets, credentials, API keys, and common security vulnerabilities",
+  "author": {
+    "name": "Tony Yang"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["security", "secrets", "scanning", "audit", "owasp", "vulnerabilities"]
+}
