@@ -263,6 +263,6 @@ Contributions welcome — especially new detection patterns. See the pattern for
 
 ## License
 
-Copyright 2026 Tony Yang
+Copyright 2026 Kuoshih Yang
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full text.

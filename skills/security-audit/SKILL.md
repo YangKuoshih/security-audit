@@ -10,7 +10,7 @@ description: >
 license: Apache-2.0
 compatibility: Requires bash and grep for primary scanning, or Python 3 as fallback. Works without shell access in degraded mode.
 metadata:
-  author: Tony Yang
+  author: Kuoshih Yang
   version: "0.1.0"
   repository: https://github.com/YangKuoshih/security-audit
 ---
