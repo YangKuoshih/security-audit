@@ -1,0 +1,82 @@
+[
+  {
+    "query": "can you scan this repo for any hardcoded secrets or api keys before i push to github",
+    "should_trigger": true
+  },
+  {
+    "query": "i think someone committed an aws key to this codebase last week, can you find it",
+    "should_trigger": true
+  },
+  {
+    "query": "do a full security audit of the project and give me a report i can share with my team",
+    "should_trigger": true
+  },
+  {
+    "query": "check the files changed since main for any leaked credentials or tokens",
+    "should_trigger": true
+  },
+  {
+    "query": "generate a sarif file from this codebase so i can upload it to github code scanning",
+    "should_trigger": true
+  },
+  {
+    "query": "make sure nothing sensitive got committed — passwords, tokens, private keys etc",
+    "should_trigger": true
+  },
+  {
+    "query": "audit codebase security and give me findings grouped by critical high medium low",
+    "should_trigger": true
+  },
+  {
+    "query": "my CI pipeline needs a secret scanning step, can you run it on the current branch",
+    "should_trigger": true
+  },
+  {
+    "query": "find exposed api keys and tell me which ones need rotating immediately",
+    "should_trigger": true
+  },
+  {
+    "query": "look for any security issues in this django app — injection, xss, hardcoded passwords, anything",
+    "should_trigger": true
+  },
+  {
+    "query": "what are the open TODO comments in this file",
+    "should_trigger": false
+  },
+  {
+    "query": "run grep -r 'password' across the whole project and show me matches",
+    "should_trigger": false
+  },
+  {
+    "query": "can you review my pull request for code quality and logic errors",
+    "should_trigger": false
+  },
+  {
+    "query": "help me write unit tests for the authentication module",
+    "should_trigger": false
+  },
+  {
+    "query": "explain how jwt authentication works and when to use refresh tokens",
+    "should_trigger": false
+  },
+  {
+    "query": "run dependabot or check if any of my npm packages have known vulnerabilities",
+    "should_trigger": false
+  },
+  {
+    "query": "i need to set up github actions to run security scans — help me write the workflow yaml",
+    "should_trigger": false
+  },
+  {
+    "query": "show me the git history for this file and who last changed the config",
+    "should_trigger": false
+  },
+  {
+    "query": "my app has a sql injection bug on line 42 of users.py, help me fix it",
+    "should_trigger": false
+  },
+  {
+    "query": "search the codebase for all usages of the old api client class so i can refactor them",
+    "should_trigger": false
+  }
+]

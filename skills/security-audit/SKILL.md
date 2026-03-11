@@ -1,18 +1,17 @@
 ---
 name: security-audit
 description: >
-  Use this skill to scan a codebase for hardcoded secrets, leaked credentials,
-  API keys, and security vulnerabilities. Invoke it whenever the user asks to
-  "scan for secrets", "do a security audit", "find hardcoded keys or tokens",
-  "check for leaked credentials", "audit the codebase for security issues",
-  "find exposed API keys", "look for any security problems", or "make sure
-  nothing sensitive is committed". Also use for incremental git-diff scanning
-  ("only check what changed since main"), SARIF report generation for GitHub
-  Code Scanning uploads, entropy-based detection of unknown secret formats, or
-  any request to produce a severity-classified security report. Works with or
-  without shell access. Prefer this skill over ad-hoc grep — it applies
-  deterministic pattern scanning plus LLM false-positive filtering in a single
-  repeatable workflow.
+  Scans source code files for hardcoded secrets, leaked credentials, and
+  security vulnerability patterns, then produces a severity-classified audit
+  report (Markdown, SARIF, or JSON). Use this skill — not ad-hoc grep — when
+  the user wants to: scan for hardcoded secrets or API keys, do a security
+  audit, find leaked credentials or tokens, check whether sensitive values were
+  committed, run an incremental scan of files changed since a branch, generate
+  a SARIF file for GitHub Code Scanning, or get a report of findings grouped by
+  Critical / High / Medium / Low. Do NOT use for: fixing individual bugs the
+  user has already identified, writing CI/CD pipeline config, checking package
+  dependency CVEs (use a dependency scanner for that), or general code review
+  without a security focus.
 license: Apache-2.0
 compatibility: Requires bash and grep for primary scanning, or Python 3 as fallback. Works without shell access in degraded mode.
 metadata:
