@@ -20,6 +20,8 @@ Options:
 Output: JSON Lines format, one finding per line.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import math
@@ -213,17 +215,18 @@ def get_file_list(
 # ─── Pattern Loading ────────────────────────────────────────────────────────
 
 class Pattern:
-    __slots__ = ("severity", "pattern_id", "name", "regex")
+    __slots__ = ("severity", "pattern_id", "name", "regex", "compiled")
 
-    def __init__(self, severity: str, pattern_id: str, name: str, regex: str):
+    def __init__(self, severity: str, pattern_id: str, name: str, regex: str, compiled: re.Pattern):
         self.severity = severity
         self.pattern_id = pattern_id
         self.name = name
         self.regex = regex
+        self.compiled = compiled  # precompiled for performance across many files
 
 
 def load_patterns(patterns_file: str) -> list[Pattern]:
-    """Load patterns from tab-delimited patterns.dat file."""
+    """Load and precompile patterns from tab-delimited patterns.dat file."""
     patterns = []
     with open(patterns_file, "r", encoding="utf-8") as f:
         for line in f:
@@ -238,12 +241,12 @@ def load_patterns(patterns_file: str) -> list[Pattern]:
 
             severity, pattern_id, name, regex = parts
             try:
-                re.compile(regex)
+                compiled = re.compile(regex)
             except re.error as e:
                 print(f"WARNING: Invalid regex for {pattern_id}: {e}", file=sys.stderr)
                 continue
 
-            patterns.append(Pattern(severity, pattern_id, name, regex))
+            patterns.append(Pattern(severity, pattern_id, name, regex, compiled))
 
     return patterns
 
@@ -279,7 +282,7 @@ def scan_file(
 
     # Pattern-based scanning
     for pattern in patterns:
-        compiled = re.compile(pattern.regex)
+        compiled = pattern.compiled
         for line_num, line in enumerate(lines, start=1):
             match = compiled.search(line)
             if match:

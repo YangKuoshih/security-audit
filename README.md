@@ -78,7 +78,7 @@ claude plugin add security-audit
 
 **Or clone and use locally:**
 ```bash
-git clone https://github.com/your-org/security-audit.git
+git clone https://github.com/YangKuoshih/security-audit.git
 
 # Use as a Claude Code plugin (from any project directory)
 claude --plugin-dir /path/to/security-audit
@@ -172,7 +172,7 @@ Summary: 3 Critical, 4 High, 8 Medium, 3 Low
 | **Medium** | Needs verification, or confirmed vuln pattern. | 1-2 weeks | SQL injection sinks, high-entropy strings, XSS |
 | **Low** | Best practice violation. No direct exploit. | Next cycle | Debug mode, permissive CORS, disabled SSL verify |
 
-The LLM adjusts severity based on context — findings in test files get downgraded, findings in deployment scripts get upgraded. See [`references/severity-guide.md`](skill/references/severity-guide.md) for the full ruleset.
+The LLM adjusts severity based on context — findings in test files get downgraded, findings in deployment scripts get upgraded. See [`references/severity-guide.md`](skills/security-audit/references/severity-guide.md) for the full ruleset.
 
 ## Configuration
 
@@ -204,7 +204,7 @@ custom_patterns:
       reason: "Placeholder keys"
 ```
 
-See [`examples/security-audit.yml`](skill/examples/security-audit.yml) for all options with inline documentation.
+See [`examples/security-audit.yml`](skills/security-audit/examples/security-audit.yml) for all options with inline documentation.
 
 ## Project Structure
 
@@ -259,7 +259,7 @@ Full design documentation is available in [`docs/plans/`](docs/plans/):
 
 ## Contributing
 
-Contributions welcome — especially new detection patterns. See the pattern format in [`references/secret-patterns.md`](skill/references/secret-patterns.md) and add matching test cases to `tests/fixtures/`.
+Contributions welcome — especially new detection patterns. See the pattern format in [`references/secret-patterns.md`](skills/security-audit/references/secret-patterns.md) and add matching test cases to `tests/fixtures/`.
 
 ## License
 

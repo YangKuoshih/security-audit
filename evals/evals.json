@@ -1,0 +1,128 @@
+{
+  "skill_name": "security-audit",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Scan this repo for hardcoded secrets and give me a markdown security report",
+      "expected_output": "Markdown report titled '# Security Audit Report' with severity-grouped sections (Critical/High/Medium/Low), finding IDs like C-001 or H-001, redacted matches (never full secret values), and remediation guidance for each finding",
+      "assertions": [
+        {
+          "id": "markdown-title",
+          "text": "Report begins with '# Security Audit Report' heading",
+          "type": "output_contains",
+          "value": "# Security Audit Report"
+        },
+        {
+          "id": "finding-ids",
+          "text": "Report contains at least one finding ID in format [C|H|M|L]-NNN (e.g. C-001, H-002)",
+          "type": "output_matches_regex",
+          "value": "[CHML]-\\d{3}"
+        },
+        {
+          "id": "redaction",
+          "text": "No raw secret values are present — matched values are redacted (contain '...' or '****')",
+          "type": "output_matches_regex",
+          "value": "\\*{4}|\\.\\.\\."
+        },
+        {
+          "id": "remediation",
+          "text": "Each finding includes a Remediation field with actionable advice",
+          "type": "output_contains",
+          "value": "Remediation"
+        },
+        {
+          "id": "scan-metadata",
+          "text": "Report ends with a Scan Metadata section",
+          "type": "output_contains",
+          "value": "Scan Metadata"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Run an incremental security audit on files changed since main and give me the results",
+      "expected_output": "The skill detects git availability, runs in incremental mode using git diff vs main, and produces a report covering only changed files. If no changed files are found, it says so clearly rather than scanning everything.",
+      "assertions": [
+        {
+          "id": "incremental-mode",
+          "text": "Output references incremental mode or git diff (phrases like 'incremental', 'changed files', or 'base: main')",
+          "type": "output_matches_regex",
+          "value": "(?i)(incremental|changed files|base.*main|git diff)"
+        },
+        {
+          "id": "no-full-scan-fallback",
+          "text": "Output does not silently fall back to a full scan without mentioning it",
+          "type": "output_not_contains",
+          "value": "Mode: full scan"
+        },
+        {
+          "id": "produces-report-or-clean",
+          "text": "Output is either a structured report or an explicit 'no findings' / 'no changed files' message",
+          "type": "output_matches_regex",
+          "value": "(?i)(# Security Audit Report|No security findings|No files to scan|No changed files)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Audit this codebase for security issues and output the results as SARIF so I can upload to GitHub Code Scanning",
+      "expected_output": "Valid SARIF 2.1.0 JSON with 'version', 'runs', 'tool.driver', 'rules', and 'results' keys. Rules have 'security-severity' properties. Results have 'partialFingerprints' for deduplication. No markdown output — pure JSON.",
+      "assertions": [
+        {
+          "id": "sarif-schema",
+          "text": "Output contains SARIF 2.1.0 schema reference",
+          "type": "output_contains",
+          "value": "sarif-2.1.0"
+        },
+        {
+          "id": "sarif-version",
+          "text": "Output contains '\"version\": \"2.1.0\"'",
+          "type": "output_contains",
+          "value": "\"version\": \"2.1.0\""
+        },
+        {
+          "id": "sarif-rules",
+          "text": "Output contains a 'rules' array",
+          "type": "output_contains",
+          "value": "\"rules\""
+        },
+        {
+          "id": "sarif-security-severity",
+          "text": "Rules include 'security-severity' property for GitHub Code Scanning severity mapping",
+          "type": "output_contains",
+          "value": "security-severity"
+        },
+        {
+          "id": "sarif-fingerprints",
+          "text": "Results include 'partialFingerprints' for deduplication across scans",
+          "type": "output_contains",
+          "value": "partialFingerprints"
+        },
+        {
+          "id": "valid-json",
+          "text": "Output is valid JSON (parseable without errors)",
+          "type": "output_is_valid_json"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Check if there are any secrets or credentials hardcoded in my project — just give me a quick summary",
+      "expected_output": "Skill still triggers and runs a full scan, but tailors the output to be a concise summary: counts by severity, top findings, and a note about how to get the full report. Should NOT skip scanning because the user said 'quick'.",
+      "assertions": [
+        {
+          "id": "still-scans",
+          "text": "Output shows evidence of actual scanning (mentions files scanned, pattern count, or finding count)",
+          "type": "output_matches_regex",
+          "value": "(?i)(files scanned|patterns|findings|Critical|High|Medium|Low)"
+        },
+        {
+          "id": "no-secrets-echoed",
+          "text": "Output does not contain any unredacted secret-like values (long alphanumeric strings > 20 chars not in a code block context)",
+          "type": "subjective",
+          "guidance": "Reviewer should check that no raw API keys, tokens, or passwords appear in plain text"
+        }
+      ]
+    }
+  ]
+}

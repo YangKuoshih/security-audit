@@ -126,13 +126,24 @@ def generate_markdown(findings: list[dict]) -> str:
             match = finding.get("match", "****")
             pattern_id = finding.get("pattern_id", "unknown")
 
+            # Optional fields added by the LLM during Phase 3 analysis
+            confidence = finding.get("confidence")
+            context = finding.get("context")
+            commit = finding.get("commit")
+
             lines.append(f"### [{finding_id}] {pattern_name}")
             lines.append("")
             lines.append(f"- **File:** `{filepath}:{line_num}`")
+            if commit:
+                lines.append(f"- **Commit:** {commit}")
             lines.append(f"- **Pattern:** {pattern_id}")
             lines.append(f"- **Match:** `{match}`")
+            if confidence:
+                lines.append(f"- **Confidence:** {confidence}")
+            if context:
+                lines.append(f"- **Context:** {context}")
 
-            # Add severity-appropriate remediation guidance
+            # Remediation: prefer LLM-generated (via context field) then fall back to built-in
             remediation = get_remediation(pattern_id, sev)
             if remediation:
                 lines.append(f"- **Remediation:** {remediation}")
@@ -206,16 +217,27 @@ def generate_sarif(findings: list[dict]) -> dict:
         pname = finding.get("pattern_name", pid)
         sev = finding.get("severity", "MEDIUM").upper()
 
+        # Optional LLM-augmented fields
+        confidence = finding.get("confidence")
+        context = finding.get("context")
+
         # Generate a stable partial fingerprint for deduplication
         fingerprint_source = f"{filepath}:{line_num}:{pid}"
         fingerprint = hashlib.sha256(fingerprint_source.encode()).hexdigest()[:16]
+
+        # Build message text: include LLM context if available
+        base_msg = f"{pname}: {match} in {filepath}:{line_num}"
+        message_text = f"{base_msg} — {context}" if context else base_msg
+
+        # Map confidence to SARIF precision (overrides rule-level default when present)
+        confidence_to_precision = {"High": "high", "Medium": "medium", "Low": "low"}
 
         result = {
             "ruleId": pid,
             "ruleIndex": rule_index.get(pid, 0),
             "level": SARIF_LEVEL.get(sev, "warning"),
             "message": {
-                "text": f"{pname}: {match} in {filepath}:{line_num}",
+                "text": message_text,
             },
             "locations": [
                 {
@@ -226,8 +248,6 @@ def generate_sarif(findings: list[dict]) -> dict:
                         "region": {
                             "startLine": line_num,
                             "startColumn": 1,
-                            "endLine": line_num,
-                            "endColumn": 1,
                         },
                     },
                 },
@@ -236,6 +256,11 @@ def generate_sarif(findings: list[dict]) -> dict:
                 "primaryLocationLineHash": fingerprint,
             },
         }
+
+        # Add per-result precision override when LLM has assessed confidence
+        if confidence and confidence in confidence_to_precision:
+            result["properties"] = {"precision": confidence_to_precision[confidence]}
+
         results.append(result)
 
     sarif = {
@@ -266,6 +291,7 @@ def generate_json(findings: list[dict]) -> dict:
     grouped = group_by_severity(findings)
     now = datetime.now(timezone.utc).isoformat()
 
+    # findings already contain any LLM-augmented fields (confidence, context, commit)
     return {
         "tool": TOOL_NAME,
         "version": TOOL_VERSION,

@@ -1,12 +1,18 @@
 ---
 name: security-audit
 description: >
-  This skill should be used when the user asks to "scan for secrets",
-  "security audit", "find hardcoded keys", "check for vulnerabilities",
-  "scan for API keys", "find leaked credentials", "check for security issues",
-  "audit codebase security", "find exposed secrets", or mentions security
-  scanning of a codebase. Provides hybrid deterministic + LLM-assisted
-  security scanning with severity-classified reports.
+  Use this skill to scan a codebase for hardcoded secrets, leaked credentials,
+  API keys, and security vulnerabilities. Invoke it whenever the user asks to
+  "scan for secrets", "do a security audit", "find hardcoded keys or tokens",
+  "check for leaked credentials", "audit the codebase for security issues",
+  "find exposed API keys", "look for any security problems", or "make sure
+  nothing sensitive is committed". Also use for incremental git-diff scanning
+  ("only check what changed since main"), SARIF report generation for GitHub
+  Code Scanning uploads, entropy-based detection of unknown secret formats, or
+  any request to produce a severity-classified security report. Works with or
+  without shell access. Prefer this skill over ad-hoc grep — it applies
+  deterministic pattern scanning plus LLM false-positive filtering in a single
+  repeatable workflow.
 license: Apache-2.0
 compatibility: Requires bash and grep for primary scanning, or Python 3 as fallback. Works without shell access in degraded mode.
 metadata:
@@ -18,6 +24,10 @@ metadata:
 # Security Audit
 
 Scan a codebase for hardcoded secrets, credentials, API keys, and common security vulnerabilities. Produce a severity-classified report with remediation guidance.
+
+## Path Resolution
+
+Throughout this skill, `${CLAUDE_PLUGIN_ROOT}` refers to the directory where this plugin is installed. Claude Code sets this automatically when loading a plugin. If the variable is not available in your environment, resolve it as the parent directory of the `skills/` folder containing this file (i.e., the repository root of the security-audit plugin).
 
 ## Workflow
 
@@ -91,6 +101,13 @@ Review the raw findings from Phase 2 and for each finding:
 
 4. **Generate remediation:** tailor advice to the repo's tech stack. Reference environment variables, secrets managers, or `.gitignore` as appropriate.
 
+After completing Phase 3 analysis, produce an **augmented findings list** by adding three fields to each finding from Phase 2:
+- `"confidence"`: `"High"`, `"Medium"`, or `"Low"` (see `references/severity-guide.md`)
+- `"context"`: one sentence explaining the severity rating and confidence — e.g., *"Live Stripe key in a production deploy script; no placeholder markers present."*
+- `"commit"`: the git commit hash and author for the line, if available from `git log -L <line>,<line>:<file>`; omit the field if git is unavailable
+
+This augmented list is what gets passed to report generation. The scanner scripts do not add these fields — only the LLM can determine them.
+
 ### Phase 4: Report Generation
 
 **If shell access is available (Python required):**
@@ -140,6 +157,15 @@ The skill reads `.security-audit.yml` from the repo root. See `examples/security
 - `output.format` — markdown, sarif, or json
 - `custom_patterns.secrets` — add custom regex patterns
 - `custom_patterns.allowlist` — suppress known false positives
+
+**Applying configuration to script invocations:**
+- `exclude.directories` → pass as `--exclude-dirs` (comma-separated) to both scanner scripts
+- `scan.mode: incremental` + `scan.base_branch` → pass as `--base-branch` to scanner scripts
+- `output.format` → pass as the `<format>` argument to `generate-report.py`
+- `severity.minimum` — filter applied by the LLM during Phase 3; not a script flag
+- `exclude.patterns` (glob patterns) — not supported by the scanner scripts; apply filtering manually before invoking the scripts, or skip files that match during Phase 3 analysis
+- `custom_patterns.secrets` — not passed to scanner scripts at runtime; to use custom patterns with the scripts, add them to `scripts/patterns.dat` in the format: `<SEVERITY>\t<id>\t<name>\t<regex>`
+- `custom_patterns.allowlist` — applied by the LLM during Phase 3; check each finding's file path and matched value against the allowlist and suppress matching findings
 
 ## Additional Resources
 

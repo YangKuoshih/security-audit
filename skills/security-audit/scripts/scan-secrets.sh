@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scan-secrets.sh — Pattern-based secret and vulnerability scanner
-# Part of the security-audit skill (https://github.com/your-org/security-audit)
+# Part of the security-audit skill (https://github.com/YangKuoshih/security-audit)
 # Licensed under Apache 2.0
 #
 # Usage:
@@ -137,7 +137,8 @@ emit_finding() {
 # ─── Build file list ───────────────────────────────────────────────────────
 
 FILE_LIST=$(mktemp)
-trap 'rm -f "$FILE_LIST" 2>/dev/null' EXIT
+CURRENT_PATTERN_TMP=""
+trap 'rm -f "$FILE_LIST" "$FILTERED_LIST" "$CURRENT_PATTERN_TMP" 2>/dev/null' EXIT
 
 if [[ -f "$TARGET_DIR" ]]; then
   # Single file mode
@@ -162,7 +163,6 @@ fi
 
 # Filter: exclude directories and binary extensions
 FILTERED_LIST=$(mktemp)
-trap 'rm -f "$FILE_LIST" "$FILTERED_LIST" 2>/dev/null' EXIT
 
 while IFS= read -r filepath; do
   # Skip excluded directories
@@ -204,8 +204,10 @@ echo "Grep mode: $GREP_MODE" >&2
 
 FINDING_COUNT=0
 
-# For each pattern, grep across all files at once (much faster than per-file)
-for i in $(seq 0 $((PATTERN_COUNT - 1))); do
+# For each pattern, grep across all files at once (much faster than per-file).
+# Use arithmetic loop instead of seq(1) for POSIX portability.
+i=0
+while [ "$i" -lt "$PATTERN_COUNT" ]; do
   local_sev="${P_SEV[$i]}"
   local_id="${P_ID[$i]}"
   local_name="${P_NAME[$i]}"
@@ -219,8 +221,10 @@ for i in $(seq 0 $((PATTERN_COUNT - 1))); do
 
   # Grep all files for this pattern. -I skips binary, -n shows line numbers, -H shows filename.
   # Store results in temp file to avoid subshell variable scope issues and pipefail exits.
+  # Track in CURRENT_PATTERN_TMP so the EXIT trap can clean it up on early exit.
   local_results=$(mktemp)
-  cat "$FILTERED_LIST" | xargs -d '\n' grep -nIH $grep_flag -- "$local_regex" 2>/dev/null > "$local_results" || true
+  CURRENT_PATTERN_TMP="$local_results"
+  tr '\n' '\0' < "$FILTERED_LIST" | xargs -0 grep -nIH $grep_flag -- "$local_regex" 2>/dev/null > "$local_results" || true
 
   while IFS= read -r result; do
     [[ -z "$result" ]] && continue
@@ -244,6 +248,7 @@ for i in $(seq 0 $((PATTERN_COUNT - 1))); do
   done < "$local_results"
 
   rm -f "$local_results"
+  i=$((i + 1))
 done
 
 echo "Scan complete. Findings: $FINDING_COUNT" >&2
