@@ -56,6 +56,29 @@
               }
             },
             {
+              "id": "private-key-block",
+              "shortDescription": {
+                "text": "Private Key (PEM Block)"
+              },
+              "fullDescription": {
+                "text": "Private Key (PEM Block) (critical severity)"
+              },
+              "help": {
+                "text": "Pattern: private-key-block. Remove the private key from the repository. Add the file to .gitignore. Rotate the key pair. Use a secrets vault for key storage. Note: the key remains in git history — use git filter-repo or BFG Repo-Cleaner to purge it.",
+                "markdown": "**Private Key (PEM Block)**\n\nPattern: private-key-block. Remove the private key from the repository. Add the file to .gitignore. Rotate the key pair. Use a secrets vault for key storage. Note: the key remains in git history — use git filter-repo or BFG Repo-Cleaner to purge it."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "security-severity": "9.5",
+                "precision": "high",
+                "tags": [
+                  "security"
+                ]
+              }
+            },
+            {
               "id": "github-pat-classic",
               "shortDescription": {
                 "text": "GitHub PAT (Classic)"
@@ -188,29 +211,6 @@
               "properties": {
                 "security-severity": "5.0",
                 "precision": "medium",
-                "tags": [
-                  "security"
-                ]
-              }
-            },
-            {
-              "id": "private-key-block",
-              "shortDescription": {
-                "text": "Private Key (PEM Block)"
-              },
-              "fullDescription": {
-                "text": "Private Key (PEM Block) (critical severity)"
-              },
-              "help": {
-                "text": "Pattern: private-key-block. Remove the private key from the repository. Add the file to .gitignore. Rotate the key pair. Use a secrets vault for key storage. Note: the key remains in git history — use git filter-repo or BFG Repo-Cleaner to purge it.",
-                "markdown": "**Private Key (PEM Block)**\n\nPattern: private-key-block. Remove the private key from the repository. Add the file to .gitignore. Rotate the key pair. Use a secrets vault for key storage. Note: the key remains in git history — use git filter-repo or BFG Repo-Cleaner to purge it."
-              },
-              "defaultConfiguration": {
-                "level": "error"
-              },
-              "properties": {
-                "security-severity": "9.5",
-                "precision": "high",
                 "tags": [
                   "security"
                 ]
@@ -432,7 +432,7 @@
           "ruleIndex": 0,
           "level": "error",
           "message": {
-            "text": "AWS Access Key ID: AKIA...MPLE in leaky-config.js:8"
+            "text": "AWS Access Key ID: AKIA...MPLE in leaky-config.js:8 — Active-format AWS access key (AKIA prefix) in a production config file loaded at startup. The companion secret key appears on the next line. Credential is live — rotate immediately."
           },
           "locations": [
             {
@@ -442,15 +442,16 @@
                 },
                 "region": {
                   "startLine": 8,
-                  "startColumn": 1,
-                  "endLine": 8,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
           ],
           "partialFingerprints": {
             "primaryLocationLineHash": "47dddfd2cfe05b9c"
+          },
+          "properties": {
+            "precision": "high"
           }
         },
         {
@@ -458,7 +459,7 @@
           "ruleIndex": 1,
           "level": "error",
           "message": {
-            "text": "Stripe Secret Key: sk_l...uvwx in leaky-config.js:35"
+            "text": "Stripe Secret Key: sk_l...uvwx in leaky-config.js:35 — Live Stripe secret key (sk_live_ prefix). Unlike test keys (sk_test_), live keys authorize real financial transactions. Exposure is critical."
           },
           "locations": [
             {
@@ -468,228 +469,21 @@
                 },
                 "region": {
                   "startLine": 35,
-                  "startColumn": 1,
-                  "endLine": 35,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
           ],
           "partialFingerprints": {
             "primaryLocationLineHash": "bf2f80063199171d"
-          }
-        },
-        {
-          "ruleId": "github-pat-classic",
-          "ruleIndex": 2,
-          "level": "error",
-          "message": {
-            "text": "GitHub PAT (Classic): ghp_...1234 in leaky-config.js:15"
           },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 15,
-                  "startColumn": 1,
-                  "endLine": 15,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "942b9794bd2ec67b"
-          }
-        },
-        {
-          "ruleId": "slack-bot-token",
-          "ruleIndex": 3,
-          "level": "error",
-          "message": {
-            "text": "Slack Bot Token: xoxb...mnop in leaky-config.js:20"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 20,
-                  "startColumn": 1,
-                  "endLine": 20,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "4edd2b7bf49acece"
-          }
-        },
-        {
-          "ruleId": "db-connection-string",
-          "ruleIndex": 4,
-          "level": "error",
-          "message": {
-            "text": "Database Connection String: post...yapp in leaky-config.js:25"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 25,
-                  "startColumn": 1,
-                  "endLine": 25,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "6e1e9eced18f32c6"
-          }
-        },
-        {
-          "ruleId": "password-assignment",
-          "ruleIndex": 5,
-          "level": "error",
-          "message": {
-            "text": "Password Assignment: pass...026\" in leaky-config.js:30"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 30,
-                  "startColumn": 1,
-                  "endLine": 30,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "ba32e7296756bf58"
-          }
-        },
-        {
-          "ruleId": "generic-secret",
-          "ruleIndex": 6,
-          "level": "warning",
-          "message": {
-            "text": "Generic Secret/Token Assignment: toke...234\" in leaky-config.js:15"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 15,
-                  "startColumn": 1,
-                  "endLine": 15,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "8f13e9caf25fb12a"
-          }
-        },
-        {
-          "ruleId": "high-entropy",
-          "ruleIndex": 7,
-          "level": "warning",
-          "message": {
-            "text": "High-Entropy String (entropy=5.32): ghp_...1234 in leaky-config.js:15"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 15,
-                  "startColumn": 1,
-                  "endLine": 15,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "8cf6def82a9a289b"
-          }
-        },
-        {
-          "ruleId": "high-entropy",
-          "ruleIndex": 7,
-          "level": "warning",
-          "message": {
-            "text": "High-Entropy String (entropy=4.62): xoxb...mnop in leaky-config.js:20"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 20,
-                  "startColumn": 1,
-                  "endLine": 20,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "30ebcd7706383816"
-          }
-        },
-        {
-          "ruleId": "high-entropy",
-          "ruleIndex": 7,
-          "level": "warning",
-          "message": {
-            "text": "High-Entropy String (entropy=4.56): sk_l...uvwx in leaky-config.js:35"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "leaky-config.js"
-                },
-                "region": {
-                  "startLine": 35,
-                  "startColumn": 1,
-                  "endLine": 35,
-                  "endColumn": 1
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "primaryLocationLineHash": "12b49b184ba202d7"
+          "properties": {
+            "precision": "high"
           }
         },
         {
           "ruleId": "private-key-block",
-          "ruleIndex": 8,
+          "ruleIndex": 2,
           "level": "error",
           "message": {
             "text": "Private Key (PEM Block): ----... KEY in private-key.pem:1"
@@ -702,9 +496,7 @@
                 },
                 "region": {
                   "startLine": 1,
-                  "startColumn": 1,
-                  "endLine": 1,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -714,11 +506,209 @@
           }
         },
         {
+          "ruleId": "github-pat-classic",
+          "ruleIndex": 3,
+          "level": "error",
+          "message": {
+            "text": "GitHub PAT (Classic): ghp_...1234 in leaky-config.js:15 — Classic GitHub personal access token. The commit message indicates this was intentionally hardcoded for local testing but was never removed. Token scope is unknown — could include repo write access."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 15,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "942b9794bd2ec67b"
+          },
+          "properties": {
+            "precision": "high"
+          }
+        },
+        {
+          "ruleId": "slack-bot-token",
+          "ruleIndex": 4,
+          "level": "error",
+          "message": {
+            "text": "Slack Bot Token: xoxb...mnop in leaky-config.js:20"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 20,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "4edd2b7bf49acece"
+          }
+        },
+        {
+          "ruleId": "db-connection-string",
+          "ruleIndex": 5,
+          "level": "error",
+          "message": {
+            "text": "Database Connection String: post...yapp in leaky-config.js:25 — PostgreSQL connection string with embedded username and password. The hostname suggests this is a production database, not a development instance."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 25,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "6e1e9eced18f32c6"
+          },
+          "properties": {
+            "precision": "high"
+          }
+        },
+        {
+          "ruleId": "password-assignment",
+          "ruleIndex": 6,
+          "level": "error",
+          "message": {
+            "text": "Password Assignment: pass...026\" in leaky-config.js:30"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 30,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "ba32e7296756bf58"
+          }
+        },
+        {
+          "ruleId": "generic-secret",
+          "ruleIndex": 7,
+          "level": "warning",
+          "message": {
+            "text": "Generic Secret/Token Assignment: toke...234\" in leaky-config.js:15"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 15,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "8f13e9caf25fb12a"
+          }
+        },
+        {
+          "ruleId": "high-entropy",
+          "ruleIndex": 8,
+          "level": "warning",
+          "message": {
+            "text": "High-Entropy String (entropy=5.32): ghp_...1234 in leaky-config.js:15"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 15,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "8cf6def82a9a289b"
+          }
+        },
+        {
+          "ruleId": "high-entropy",
+          "ruleIndex": 8,
+          "level": "warning",
+          "message": {
+            "text": "High-Entropy String (entropy=4.62): xoxb...mnop in leaky-config.js:20"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 20,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "30ebcd7706383816"
+          }
+        },
+        {
+          "ruleId": "high-entropy",
+          "ruleIndex": 8,
+          "level": "warning",
+          "message": {
+            "text": "High-Entropy String (entropy=4.56): sk_l...uvwx in leaky-config.js:35"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "leaky-config.js"
+                },
+                "region": {
+                  "startLine": 35,
+                  "startColumn": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "12b49b184ba202d7"
+          }
+        },
+        {
           "ruleId": "sql-injection-concat",
           "ruleIndex": 9,
           "level": "warning",
           "message": {
-            "text": "SQL Injection (String Concat): curs... + u in vulnerable-app.py:17"
+            "text": "SQL Injection (String Concat): curs... + u in vulnerable-app.py:17 — cursor.execute() called with a query built by concatenating a user-supplied user_id parameter directly into the SQL string. No sanitization or parameterization in the surrounding 10 lines. Exploitable via classic OR-based injection."
           },
           "locations": [
             {
@@ -728,15 +718,16 @@
                 },
                 "region": {
                   "startLine": 17,
-                  "startColumn": 1,
-                  "endLine": 17,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
           ],
           "partialFingerprints": {
             "primaryLocationLineHash": "5e51e186b87a6e6c"
+          },
+          "properties": {
+            "precision": "high"
           }
         },
         {
@@ -754,9 +745,7 @@
                 },
                 "region": {
                   "startLine": 17,
-                  "startColumn": 1,
-                  "endLine": 17,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -780,9 +769,7 @@
                 },
                 "region": {
                   "startLine": 28,
-                  "startColumn": 1,
-                  "endLine": 28,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -796,7 +783,7 @@
           "ruleIndex": 11,
           "level": "warning",
           "message": {
-            "text": "Insecure Deserialization: ya...d( in vulnerable-app.py:34"
+            "text": "Insecure Deserialization: ya...d( in vulnerable-app.py:34 — yaml.load() called without a Loader argument (deprecated unsafe default). Input appears to come from a file path passed in from a request parameter, making it reachable from untrusted input."
           },
           "locations": [
             {
@@ -806,15 +793,16 @@
                 },
                 "region": {
                   "startLine": 34,
-                  "startColumn": 1,
-                  "endLine": 34,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
           ],
           "partialFingerprints": {
             "primaryLocationLineHash": "f51a048a34425ff6"
+          },
+          "properties": {
+            "precision": "medium"
           }
         },
         {
@@ -832,9 +820,7 @@
                 },
                 "region": {
                   "startLine": 39,
-                  "startColumn": 1,
-                  "endLine": 39,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -858,9 +844,7 @@
                 },
                 "region": {
                   "startLine": 23,
-                  "startColumn": 1,
-                  "endLine": 23,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -884,9 +868,7 @@
                 },
                 "region": {
                   "startLine": 44,
-                  "startColumn": 1,
-                  "endLine": 44,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -900,7 +882,7 @@
           "ruleIndex": 15,
           "level": "note",
           "message": {
-            "text": "Debug Mode Enabled: DE...ue in vulnerable-app.py:49"
+            "text": "Debug Mode Enabled: DE...ue in vulnerable-app.py:49 — DEBUG = True in app.py (main entry point). A separate config/production.py overrides this value; confirm the production override is applied before deploying."
           },
           "locations": [
             {
@@ -910,15 +892,16 @@
                 },
                 "region": {
                   "startLine": 49,
-                  "startColumn": 1,
-                  "endLine": 49,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
           ],
           "partialFingerprints": {
             "primaryLocationLineHash": "9c7e42cdad2a7159"
+          },
+          "properties": {
+            "precision": "low"
           }
         },
         {
@@ -936,9 +919,7 @@
                 },
                 "region": {
                   "startLine": 53,
-                  "startColumn": 1,
-                  "endLine": 53,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }
@@ -962,9 +943,7 @@
                 },
                 "region": {
                   "startLine": 57,
-                  "startColumn": 1,
-                  "endLine": 57,
-                  "endColumn": 1
+                  "startColumn": 1
                 }
               }
             }

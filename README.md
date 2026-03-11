@@ -22,7 +22,7 @@ Works across any agentic AI platform — Claude Code, Cursor, Windsurf, Cline, a
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-58%20passing-brightgreen.svg)](#testing)
-[![Patterns](https://img.shields.io/badge/patterns-44%20rules-orange.svg)](skill/scripts/patterns.dat)
+[![Patterns](https://img.shields.io/badge/patterns-44%20rules-orange.svg)](skills/security-audit/scripts/patterns.dat)
 
 </div>
 
@@ -239,13 +239,15 @@ security-audit/
 
 ## Testing
 
-Run the full test suite:
+> **Note:** The test suite (`tests/`) has been designed but not yet committed to this repository. The fixture files contain realistic fake credentials that require `.github/secret_scanning.yml` paths-ignore to commit safely — that config is already in place. Contributions to add `tests/test-e2e.sh` and `tests/fixtures/` are welcome.
+
+Once committed, run with:
 
 ```bash
 bash tests/test-e2e.sh
 ```
 
-Tests cover:
+Planned coverage:
 - Bash scanner (21 assertions) — pattern detection, safe file validation, output format, redaction
 - Python scanner (6 assertions) — parity with bash, entropy detection, safe file
 - Report generation (25 assertions) — Markdown structure, SARIF 2.1.0 compliance, JSON validity
