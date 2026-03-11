@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 130" width="680" height="130">
+  <!-- Shield icon -->
+  <path d="M36.4,15 L57.7,23.5 L57.7,51.7 C57.7,68.8 47,79 36.4,85 C25.7,79 15,68.8 15,51.7 L15,23.5 Z"
+        fill="rgba(88,166,255,0.12)" stroke="#58a6ff" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M26.1,51.9 L32.9,58.6 L46.6,42.3"
+        fill="none" stroke="#58a6ff" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Title -->
+  <text x="78" y="58"
+        font-family="'Courier New', Courier, monospace"
+        font-size="40" font-weight="700"
+        fill="#e6edf3" letter-spacing="1">security-audit</text>
+  <!-- Subtitle -->
+  <text x="78" y="86"
+        font-family="Arial, 'Helvetica Neue', sans-serif"
+        font-size="16" fill="#8b949e">Find secrets before attackers do.</text>
+  <!-- Separator -->
+  <line x1="78" y1="100" x2="658" y2="100" stroke="#30363d" stroke-width="1"/>
+  <!-- Platform line -->
+  <text x="78" y="119"
+        font-family="Arial, 'Helvetica Neue', sans-serif"
+        font-size="13" fill="#6e7681">Claude Code · Cursor · Windsurf · Cline · works on any AI agent platform</text>
+</svg>

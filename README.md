@@ -1,24 +1,9 @@
 <div align="center">
 
-```
-███████╗███████╗ ██████╗██╗   ██╗██████╗ ██╗████████╗██╗   ██╗
-██╔════╝██╔════╝██╔════╝██║   ██║██╔══██╗██║╚══██╔══╝╚██╗ ██╔╝
-███████╗█████╗  ██║     ██║   ██║██████╔╝██║   ██║    ╚████╔╝
-╚════██║██╔══╝  ██║     ██║   ██║██╔══██╗██║   ██║     ╚██╔╝
-███████║███████╗╚██████╗╚██████╔╝██║  ██║██║   ██║      ██║
-╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝   ╚═╝      ╚═╝
-              █████╗ ██╗   ██╗██████╗ ██╗████████╗
-             ██╔══██╗██║   ██║██╔══██╗██║╚══██╔══╝
-             ███████║██║   ██║██║  ██║██║   ██║
-             ██╔══██║██║   ██║██║  ██║██║   ██║
-             ██║  ██║╚██████╔╝██████╔╝██║   ██║
-             ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝   ╚═╝
-```
-
-**Find secrets before attackers do.**
-
-A universal, tool-agnostic skill that scans codebases for hardcoded secrets and security vulnerabilities.
-Works across any agentic AI platform — Claude Code, Cursor, Windsurf, Cline, and more.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/header-dark.svg">
+  <img alt="security-audit — Find secrets before attackers do." src="assets/header.svg" width="680">
+</picture>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-58%20passing-brightgreen.svg)](#testing)
