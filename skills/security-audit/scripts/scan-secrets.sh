@@ -76,6 +76,9 @@ fi
 
 BINARY_EXTENSIONS="\.(png|jpg|jpeg|gif|bmp|ico|svg|woff|woff2|ttf|eot|otf|mp3|mp4|avi|mov|pdf|zip|gz|tar|bz2|7z|rar|jar|war|ear|class|pyc|pyo|so|dylib|dll|exe|bin|dat|db|sqlite|sqlite3|lock|min\.js|min\.css|map|chunk\.js)$"
 
+# Generated lockfiles that are large and never contain real secrets (skip by basename)
+SKIP_FILENAMES="/(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Gemfile\.lock|Pipfile\.lock|poetry\.lock|Cargo\.lock|go\.sum|flake\.lock|npm-shrinkwrap\.json)$"
+
 # ─── Detect grep capabilities ──────────────────────────────────────────────
 
 GREP_MODE="ERE"
@@ -168,7 +171,7 @@ fi
 # Filter: exclude directories and binary extensions (single pass, no per-file forks)
 FILTERED_LIST=$(mktemp)
 
-grep -vE "/(${EXCLUDE_DIRS})(/|$)" "$FILE_LIST" | grep -viE "$BINARY_EXTENSIONS" > "$FILTERED_LIST" || true
+grep -vE "/(${EXCLUDE_DIRS})(/|$)" "$FILE_LIST" | grep -viE "$BINARY_EXTENSIONS" | grep -vE "$SKIP_FILENAMES" > "$FILTERED_LIST" || true
 
 FILE_COUNT=$(wc -l < "$FILTERED_LIST" | tr -d ' ')
 echo "Files to scan: $FILE_COUNT" >&2

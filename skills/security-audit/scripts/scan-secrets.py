@@ -51,6 +51,14 @@ BINARY_EXTENSIONS = {
     ".lock", ".map",
 }
 
+# Generated files that are large and never contain real secrets (skip by basename)
+SKIP_FILENAMES = {
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "composer.lock", "Gemfile.lock", "Pipfile.lock", "poetry.lock",
+    "Cargo.lock", "go.sum", "flake.lock",
+    "npm-shrinkwrap.json",
+}
+
 # Entropy detection settings
 ENTROPY_MIN_LENGTH = 20       # Minimum string length to evaluate
 ENTROPY_VARIABLE_NAMES = re.compile(
@@ -146,7 +154,11 @@ def is_placeholder(value: str) -> bool:
 # ─── File Discovery ─────────────────────────────────────────────────────────
 
 def is_binary_file(filepath: str) -> bool:
-    """Check if a file is binary by extension or by reading first bytes."""
+    """Check if a file is binary by extension, name, or by reading first bytes."""
+    name = Path(filepath).name
+    if name in SKIP_FILENAMES:
+        return True
+
     ext = Path(filepath).suffix.lower()
     if ext in BINARY_EXTENSIONS:
         return True
