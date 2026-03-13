@@ -151,6 +151,11 @@ def is_binary_file(filepath: str) -> bool:
     if ext in BINARY_EXTENSIONS:
         return True
 
+    # Only probe file contents for unknown extensions — skip the I/O when
+    # the extension is a known text type (covers the vast majority of files)
+    if ext in _KNOWN_TEXT_EXTENSIONS:
+        return False
+
     # Check for null bytes in first 512 bytes
     try:
         with open(filepath, "rb") as f:
@@ -161,6 +166,24 @@ def is_binary_file(filepath: str) -> bool:
         return True
 
     return False
+
+
+_KNOWN_TEXT_EXTENSIONS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+    ".java", ".kt", ".kts", ".scala", ".groovy", ".gradle",
+    ".go", ".rs", ".rb", ".php", ".c", ".h", ".cpp", ".hpp", ".cs",
+    ".swift", ".m", ".mm", ".r", ".R", ".pl", ".pm", ".lua",
+    ".sh", ".bash", ".zsh", ".fish", ".bat", ".cmd", ".ps1",
+    ".html", ".htm", ".css", ".scss", ".sass", ".less",
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+    ".xml", ".xsl", ".xsd", ".plist", ".properties",
+    ".md", ".rst", ".txt", ".csv", ".tsv", ".log",
+    ".sql", ".graphql", ".gql", ".proto",
+    ".tf", ".tfvars", ".hcl",
+    ".dockerfile", ".env", ".env.example", ".gitignore",
+    ".editorconfig", ".eslintrc", ".prettierrc",
+    ".vue", ".svelte", ".astro",
+}
 
 
 def get_file_list(
@@ -307,7 +330,12 @@ def scan_file(
     patterns: list[Pattern],
     enable_entropy: bool,
 ) -> list[dict]:
-    """Scan a single file against all patterns and optionally for high-entropy strings."""
+    """Scan a single file against all patterns and optionally for high-entropy strings.
+
+    Iterates lines once, testing all patterns per line (better cache locality
+    than the inverse — each line is in CPU cache when tested against every pattern).
+    Entropy detection runs in the same pass to avoid a second file read.
+    """
     findings = []
 
     try:
@@ -316,36 +344,32 @@ def scan_file(
     except (OSError, PermissionError):
         return findings
 
-    # Pattern-based scanning
-    for pattern in patterns:
-        compiled = pattern.compiled
-        for line_num, line in enumerate(lines, start=1):
-            match = compiled.search(line)
+    for line_num, line in enumerate(lines, start=1):
+        # Skip blank / whitespace-only lines early
+        if not line.strip():
+            continue
+
+        # Pattern-based scanning — all patterns tested on this line
+        for pattern in patterns:
+            match = pattern.compiled.search(line)
             if match:
-                matched_text = match.group(0)
                 findings.append({
                     "file": filepath,
                     "line": line_num,
-                    "match": redact(matched_text),
+                    "match": redact(match.group(0)),
                     "pattern_id": pattern.pattern_id,
                     "pattern_name": pattern.name,
                     "severity": pattern.severity,
                 })
 
-    # Entropy-based detection (charset-aware thresholds)
-    if enable_entropy:
-        for line_num, line in enumerate(lines, start=1):
-            if not ENTROPY_VARIABLE_NAMES.search(line):
-                continue
-
+        # Entropy-based detection (same pass, no second file read)
+        if enable_entropy and ENTROPY_VARIABLE_NAMES.search(line):
             for m in STRING_VALUE_PATTERN.finditer(line):
                 value = m.group(1)
                 if len(value) < ENTROPY_MIN_LENGTH:
                     continue
-
                 if is_placeholder(value):
                     continue
-
                 if is_false_positive_entropy(value):
                     continue
 
@@ -377,24 +401,13 @@ def make_relative(filepath: str, target: str) -> str:
 
 # ─── Dangerous File Type Scanning ─────────────────────────────────────────
 
-DANGEROUS_FILE_PATTERNS: list[tuple[str, str, str, str]] = [
-    # (glob_pattern, severity, pattern_id, pattern_name)
-    ("*.tfstate", "HIGH", "dangerous-file-tfstate", "Terraform State Committed"),
-    ("*.tfstate.backup", "HIGH", "dangerous-file-tfstate-backup", "Terraform State Backup Committed"),
-    ("*terraform-apply-output*", "MEDIUM", "dangerous-file-tf-apply-output", "Terraform Apply Output Committed"),
-    ("*terraform-plan-output*", "MEDIUM", "dangerous-file-tf-plan-output", "Terraform Plan Output Committed"),
-    ("*.pem", "CRITICAL", "dangerous-file-pem", "Private Key File Committed"),
-    ("*.key", "CRITICAL", "dangerous-file-key", "Private Key File Committed"),
-    ("*.p12", "CRITICAL", "dangerous-file-p12", "Certificate Bundle Committed"),
-    ("*.pfx", "CRITICAL", "dangerous-file-pfx", "Certificate Bundle Committed"),
-    ("*.jks", "HIGH", "dangerous-file-jks", "Java Keystore Committed"),
-    ("*.sqlite", "MEDIUM", "dangerous-file-sqlite", "Database File Committed"),
-    ("*.db", "MEDIUM", "dangerous-file-db", "Database File Committed"),
-]
-
 
 def scan_dangerous_files(target: str) -> list[dict]:
-    """Scan for dangerous file types tracked by git."""
+    """Scan for dangerous file types tracked by git.
+
+    Single-pass: iterates tracked files once, matching all patterns per file
+    (mirrors the bash scanner's case-statement approach).
+    """
     findings = []
     target_path = Path(target).resolve()
 
@@ -422,88 +435,79 @@ def scan_dangerous_files(target: str) -> list[dict]:
     if not tracked_files:
         return findings
 
-    import fnmatch
+    # Extension → (pattern_id, pattern_name, severity)
+    _EXT_MAP = {
+        ".tfstate": ("dangerous-file-tfstate", "Terraform State Committed", "HIGH"),
+        ".pem": ("dangerous-file-pem", "Private Key File Committed", "CRITICAL"),
+        ".key": ("dangerous-file-key", "Private Key File Committed", "CRITICAL"),
+        ".p12": ("dangerous-file-p12", "Certificate Bundle Committed", "CRITICAL"),
+        ".pfx": ("dangerous-file-pfx", "Certificate Bundle Committed", "CRITICAL"),
+        ".jks": ("dangerous-file-jks", "Java Keystore Committed", "HIGH"),
+        ".sqlite": ("dangerous-file-sqlite", "Database File Committed", "MEDIUM"),
+        ".db": ("dangerous-file-db", "Database File Committed", "MEDIUM"),
+    }
+    _SECRET_EXCLUDED_EXT = {".example", ".sample", ".template", ".md"}
 
-    # Check glob-based patterns
-    for glob_pat, severity, pattern_id, pattern_name in DANGEROUS_FILE_PATTERNS:
-        for filepath in tracked_files:
-            basename = Path(filepath).name
-            # Match against basename for extension patterns, full path for wildcard patterns
-            if "*" in glob_pat and not glob_pat.startswith("*."):
-                # Pattern like *terraform-apply-output* — match against full path and basename
-                if fnmatch.fnmatch(filepath.lower(), glob_pat.lower()) or fnmatch.fnmatch(basename.lower(), glob_pat.lower()):
-                    findings.append({
-                        "file": str(target_path / filepath),
-                        "line": 0,
-                        "match": "(entire file)",
-                        "pattern_id": pattern_id,
-                        "pattern_name": pattern_name,
-                        "severity": severity,
-                    })
-            else:
-                # Extension pattern like *.tfstate — match basename
-                if fnmatch.fnmatch(basename.lower(), glob_pat.lower()):
-                    findings.append({
-                        "file": str(target_path / filepath),
-                        "line": 0,
-                        "match": "(entire file)",
-                        "pattern_id": pattern_id,
-                        "pattern_name": pattern_name,
-                        "severity": severity,
-                    })
+    def _emit(filepath: str, pid: str, pname: str, sev: str) -> None:
+        findings.append({
+            "file": str(target_path / filepath),
+            "line": 0,
+            "match": "(entire file)",
+            "pattern_id": pid,
+            "pattern_name": pname,
+            "severity": sev,
+        })
 
-    # Special: credentials.json
     for filepath in tracked_files:
-        if Path(filepath).name == "credentials.json":
-            findings.append({
-                "file": str(target_path / filepath),
-                "line": 0,
-                "match": "(entire file)",
-                "pattern_id": "dangerous-file-credentials-json",
-                "pattern_name": "Credentials File Committed",
-                "severity": "HIGH",
-            })
+        if not filepath:
+            continue
 
-    # Special: service-account*.json
-    for filepath in tracked_files:
         basename = Path(filepath).name
-        if fnmatch.fnmatch(basename.lower(), "service-account*.json"):
-            findings.append({
-                "file": str(target_path / filepath),
-                "line": 0,
-                "match": "(entire file)",
-                "pattern_id": "dangerous-file-service-account",
-                "pattern_name": "Service Account Key Committed",
-                "severity": "HIGH",
-            })
+        lower_base = basename.lower()
+        lower_path = filepath.lower()
+        matched = False
 
-    # Special: .terraform/ directory
-    for filepath in tracked_files:
-        if ".terraform/" in filepath or filepath.startswith(".terraform/"):
-            findings.append({
-                "file": str(target_path / filepath),
-                "line": 0,
-                "match": "(entire file)",
-                "pattern_id": "dangerous-file-terraform-cache",
-                "pattern_name": "Terraform Provider Cache Committed",
-                "severity": "MEDIUM",
-            })
+        # .tfstate.backup must be checked before .tfstate (longer suffix wins)
+        if lower_base.endswith(".tfstate.backup"):
+            _emit(filepath, "dangerous-file-tfstate-backup", "Terraform State Backup Committed", "HIGH")
+            continue
 
-    # Special: *secret* in filename (excluding .example, .sample, .template, .md)
-    excluded_extensions = {".example", ".sample", ".template", ".md"}
-    for filepath in tracked_files:
-        basename = Path(filepath).name
-        if "secret" in basename.lower():
-            ext = Path(basename).suffix.lower()
-            if ext not in excluded_extensions:
-                findings.append({
-                    "file": str(target_path / filepath),
-                    "line": 0,
-                    "match": "(entire file)",
-                    "pattern_id": "dangerous-file-secret-name",
-                    "pattern_name": "Possible Secrets File Committed",
-                    "severity": "MEDIUM",
-                })
+        # Extension-based patterns
+        ext = Path(lower_base).suffix
+        if ext in _EXT_MAP:
+            pid, pname, sev = _EXT_MAP[ext]
+            _emit(filepath, pid, pname, sev)
+            matched = True
+
+        # Name-based: credentials.json
+        if not matched and lower_base == "credentials.json":
+            _emit(filepath, "dangerous-file-credentials-json", "Credentials File Committed", "HIGH")
+            matched = True
+
+        # Name-based: service-account*.json
+        if not matched and lower_base.startswith("service-account") and lower_base.endswith(".json"):
+            _emit(filepath, "dangerous-file-service-account", "Service Account Key Committed", "HIGH")
+            matched = True
+
+        # Wildcard-name: terraform output files
+        if not matched:
+            if "terraform-apply-output" in lower_base:
+                _emit(filepath, "dangerous-file-tf-apply-output", "Terraform Apply Output Committed", "MEDIUM")
+                matched = True
+            elif "terraform-plan-output" in lower_base:
+                _emit(filepath, "dangerous-file-tf-plan-output", "Terraform Plan Output Committed", "MEDIUM")
+                matched = True
+
+        # .terraform/ directory
+        if not matched and (".terraform/" in lower_path or lower_path.startswith(".terraform/")):
+            _emit(filepath, "dangerous-file-terraform-cache", "Terraform Provider Cache Committed", "MEDIUM")
+            matched = True
+
+        # *secret* in filename (excluding safe extensions)
+        if not matched and "secret" in lower_base:
+            ext = Path(lower_base).suffix
+            if ext not in _SECRET_EXCLUDED_EXT:
+                _emit(filepath, "dangerous-file-secret-name", "Possible Secrets File Committed", "MEDIUM")
 
     return findings
 

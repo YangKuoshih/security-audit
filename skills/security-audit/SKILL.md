@@ -46,30 +46,32 @@ Execute the following four phases in order. Adapt based on environment capabilit
 
 ### Phase 1: Setup
 
-1. Detect environment capabilities:
-   - Shell access: attempt `echo "shell-ok"` via bash
-   - Git available: attempt `git --version`
-   - Python available: attempt `python3 --version` or `python --version` (use whichever works)
-2. Check for `.security-audit.yml` in the repo root. If present, read and apply configuration. If absent, use defaults:
-   - Scan mode: `full`
-   - Excluded dirs: `node_modules`, `venv`, `.git`, `dist`, `build`, `__pycache__`, `.next`, `vendor`, `target`
-   - Excluded files: `*.min.js`, `*.lock`, `*.map`
-   - Severity minimum: all
-   - Output format: markdown
-3. Determine scan mode:
-   - **Full:** scan all files
-   - **Incremental:** use `git diff --name-only <base_branch>...HEAD` to get changed files
-   - **Paths:** scan only specified directories
-4. Build the file list. If git is available, use `git ls-files`. Otherwise, walk the directory tree with exclusions.
+Run a **single** bash command to detect all environment capabilities at once:
+
+```bash
+echo "=== ENV ===" && echo "shell-ok" && (git --version 2>/dev/null || echo "git-missing") && (python3 --version 2>/dev/null || python --version 2>/dev/null || echo "python-missing") && echo "=== CONFIG ===" && (cat .security-audit.yml 2>/dev/null || echo "no-config")
+```
+
+Parse the output to determine: shell access, git availability, Python command (`python3` or `python`), and config. If `.security-audit.yml` is absent, use defaults:
+- Scan mode: `full`
+- Excluded dirs: `node_modules`, `venv`, `.git`, `dist`, `build`, `__pycache__`, `.next`, `vendor`, `target`
+- Excluded files: `*.min.js`, `*.lock`, `*.map`
+- Severity minimum: all
+- Output format: markdown
+
+Determine scan mode:
+- **Full:** scan all files
+- **Incremental:** use `git diff --name-only <base_branch>...HEAD` to get changed files
+- **Paths:** scan only specified directories
 
 ### Phase 2: Pattern Scanning
 
 **If shell access is available (primary path):**
 
-Run the Python scanner (preferred — faster, includes entropy detection):
+Run the Python scanner (preferred — faster, includes entropy detection). Combine scanner + tech stack detection into a **single** bash call to minimize tool call overhead:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.py" --target "<target_dir>" --patterns "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" --output "<output_file>"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.py" --target "<target_dir>" --patterns "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" --output "<output_file>" && echo "=== TECHSTACK ===" && ls -1 package.json requirements.txt pyproject.toml go.mod pom.xml build.gradle Gemfile Dockerfile docker-compose.yml 2>/dev/null; find . -maxdepth 2 -name '*.tf' -print -quit 2>/dev/null
 ```
 
 Use `python3` or `python` depending on what is available. For incremental mode, add `--base-branch <branch>`.
@@ -77,7 +79,7 @@ Use `python3` or `python` depending on what is available. For incremental mode, 
 If Python is not available, fall back to the bash scanner:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.sh" "<target_dir>" "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" "<output_file>"
+bash "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.sh" "<target_dir>" "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" "<output_file>" && echo "=== TECHSTACK ===" && ls -1 package.json requirements.txt pyproject.toml go.mod pom.xml build.gradle Gemfile Dockerfile docker-compose.yml 2>/dev/null; find . -maxdepth 2 -name '*.tf' -print -quit 2>/dev/null
 ```
 
 For incremental mode, add `--base-branch <branch>`.
@@ -107,18 +109,24 @@ Use `git ls-files --cached` knowledge to ask the user about tracked files matchi
 
 ### Phase 3: LLM Analysis
 
-Review the **redacted** findings from Phase 2 (the JSONL output file). Follow Secret Data Safety rules — work from scanner output only, not original source files, for secret findings.
+**Performance guidelines for this phase:**
+- Do NOT read `references/secret-patterns.md`, `references/vulnerability-patterns.md`, or `references/severity-guide.md` unless you encounter a finding you cannot classify from the information in this file. The key rules are summarized below.
+- Do NOT read source files for secret findings — work from scanner output only.
+- You MAY read ~10 lines of source for **vulnerability** findings to assess exploitability.
+- Combine all Phase 3 reasoning into a single analysis pass — do not iterate findings one at a time with separate tool calls.
+
+Read the **redacted** findings JSONL output file **once** (single Read tool call). Perform all analysis below from that single read — do not re-read the file. Follow Secret Data Safety rules — work from scanner output only, not original source files, for secret findings.
 
 #### 3a. Tech Stack Detection
 
-Before analyzing findings, identify the project's tech stack by checking for:
-- `package.json` → Node.js (recommend: `process.env`, AWS Secrets Manager, GitHub Secrets)
-- `requirements.txt` / `pyproject.toml` → Python (recommend: `os.environ`, python-dotenv, Vault)
-- `go.mod` → Go (recommend: `os.Getenv`, Vault, cloud-native secrets)
-- `pom.xml` / `build.gradle` → Java (recommend: Spring Vault, AWS Secrets Manager)
-- `Gemfile` → Ruby (recommend: `ENV[]`, dotenv, Rails credentials)
-- `*.tf` files → Terraform (recommend: remote state, variable files, Vault provider)
-- `Dockerfile` / `docker-compose.yml` → containerized (recommend: Docker secrets, not build args for secrets)
+Tech stack detection was already run as part of the Phase 2 scanner command (after `=== TECHSTACK ===` in the output). Parse those results — do NOT run a separate command. Map results to remediation context:
+- `package.json` → Node.js (`process.env`, AWS Secrets Manager, GitHub Secrets)
+- `requirements.txt` / `pyproject.toml` → Python (`os.environ`, python-dotenv, Vault)
+- `go.mod` → Go (`os.Getenv`, Vault, cloud-native secrets)
+- `pom.xml` / `build.gradle` → Java (Spring Vault, AWS Secrets Manager)
+- `Gemfile` → Ruby (`ENV[]`, dotenv, Rails credentials)
+- `*.tf` → Terraform (remote state, variable files, Vault provider)
+- `Dockerfile` / `docker-compose.yml` → containerized (Docker secrets, not build args)
 
 Use this context to tailor all remediation advice to the actual stack.
 
@@ -131,24 +139,24 @@ Group related findings before classifying:
 
 #### 3c. Finding Triage
 
-For each finding (or correlated group):
+Process ALL findings in a **single reasoning pass** (not one tool call per finding). For each finding (or correlated group):
 
 1. **Filter false positives** using redacted match text and file path context:
-   - Discard matches in test/example/docs paths with placeholder patterns
-   - For dangerous file-type findings (`line: 0`), check if file is in `examples/`, `docs/`, or `test/` for potential downgrade
-   - Use `references/vulnerability-patterns.md` § Framework-Specific False Positive Notes to evaluate vuln findings
+   - Discard matches in `test/`, `tests/`, `example/`, `examples/`, `docs/`, `fixtures/` paths with placeholder values
+   - For dangerous file-type findings (`line: 0`), check if file is in example/docs/test paths for potential downgrade
+   - Framework-specific: Django ORM `.filter()` is safe (parameterized); React JSX `{expr}` auto-escapes; Rails `where(key: val)` is safe; `subprocess.run([list])` without `shell=True` is safe
 
-2. **Classify severity** using `references/severity-guide.md`:
-   - Start with base severity from pattern match
-   - Apply contextual adjustments (file path, production indicators)
-   - For correlated groups, use the highest severity in the group
+2. **Classify severity** — start with base severity from scanner, then adjust:
+   - **Downgrade one tier** if: test/example/docs path, placeholder value, `.env.development`/`.env.local`/`.env.test`
+   - **Upgrade one tier** if: production path (`deploy/`, `infra/`, `.github/workflows/`), vendor-specific prefix match, production URL context
+   - Never downgrade below Low; never upgrade above Critical
 
-3. **Assess exploitability** (vulnerability findings only — NOT secret findings):
-   - For vuln findings (SQL injection, XSS, command injection, SSRF), you MAY read the surrounding function (~10 lines above/below) to assess whether user input can reach the sink
+3. **Assess exploitability** (vuln findings only, batch reads if needed):
+   - For vuln findings, you MAY read surrounding code (~10 lines) to assess user input reachability
    - Do NOT read files flagged for secret findings
    - Rate: Exploitable / Likely Exploitable / Needs Investigation / Likely False Positive
 
-4. **Assign confidence**: High (vendor-specific prefix or unambiguous file type), Medium (generic pattern needing context), Low (heuristic match)
+4. **Assign confidence**: High (vendor-specific prefix like `AKIA`, `ghp_`, `sk_live_`, or unambiguous file type), Medium (generic pattern needing context), Low (entropy/heuristic match)
 
 #### 3d. Executive Summary
 
@@ -160,10 +168,22 @@ Before the detailed findings, produce a prioritized summary:
 
 #### 3e. Augmented Findings
 
-After triage, produce an **augmented findings list** by adding three fields to each finding:
+After triage, produce an **augmented findings list** by adding fields to each finding:
 - `"confidence"`: `"High"`, `"Medium"`, or `"Low"`
 - `"context"`: one sentence explaining the severity rating and confidence — e.g., *"Live Stripe key in a production deploy script; no placeholder markers present."*
-- `"commit"`: the git commit hash and author for the line, if available from `git log -L <line>,<line>:<file>`; omit if git is unavailable
+- `"commit"` (optional, skip for speed unless user requests it): git commit hash and author
+
+**Commit attribution** is expensive and optional. Only run it if the user explicitly requests blame/commit info. When enabled, batch all lookups into a **single** command instead of one per finding:
+
+```bash
+# Batch: extract blame for all finding locations at once
+while IFS=: read -r file line; do
+  git log -1 --format="%h %ae %as" -L "${line},${line}:${file}" 2>/dev/null | head -1
+done <<'LOCATIONS'
+path/to/file1.py:42
+path/to/file2.js:17
+LOCATIONS
+```
 
 This augmented list is what gets passed to report generation.
 
