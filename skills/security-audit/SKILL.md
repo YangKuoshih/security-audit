@@ -105,34 +105,65 @@ Use `git ls-files --cached` knowledge to ask the user about tracked files matchi
 
 ### Phase 3: LLM Analysis
 
-Review the **redacted** findings from Phase 2 (the JSONL output file). Do NOT read the original source files that contain flagged secrets — work only from the scanner output and file path context.
+Review the **redacted** findings from Phase 2 (the JSONL output file). Follow Secret Data Safety rules — work from scanner output only, not original source files, for secret findings.
 
-1. **Filter false positives:**
-   - Discard matches in test fixtures, example files, documentation, and comments that use placeholder values
-   - Recognize common placeholders from the redacted match field: patterns like `xx...xx`, `ch...me`, etc.
-   - Check if the file path suggests non-production context: `test/`, `spec/`, `__tests__/`, `examples/`, `docs/`, `fixtures/`
-   - For dangerous file-type findings (`line: 0`), check if the file is in `examples/`, `docs/`, or `test/` directories for potential downgrade
+#### 3a. Tech Stack Detection
+
+Before analyzing findings, identify the project's tech stack by checking for:
+- `package.json` → Node.js (recommend: `process.env`, AWS Secrets Manager, GitHub Secrets)
+- `requirements.txt` / `pyproject.toml` → Python (recommend: `os.environ`, python-dotenv, Vault)
+- `go.mod` → Go (recommend: `os.Getenv`, Vault, cloud-native secrets)
+- `pom.xml` / `build.gradle` → Java (recommend: Spring Vault, AWS Secrets Manager)
+- `Gemfile` → Ruby (recommend: `ENV[]`, dotenv, Rails credentials)
+- `*.tf` files → Terraform (recommend: remote state, variable files, Vault provider)
+- `Dockerfile` / `docker-compose.yml` → containerized (recommend: Docker secrets, not build args for secrets)
+
+Use this context to tailor all remediation advice to the actual stack.
+
+#### 3b. Cross-Finding Correlation
+
+Group related findings before classifying:
+- **Same credential, multiple files**: If the same pattern ID matches in multiple files with identical redacted prefixes, consolidate into a single finding with all locations listed. Severity = max of all locations.
+- **Related infrastructure**: If Terraform state + Terraform output + cloud credentials are all found, note these form a compound exposure (attacker gets infrastructure map + credentials).
+- **Cascading access**: If a cloud provider key + a database connection string are both found, note the blast radius (cloud key may grant broader access than the DB string alone).
+
+#### 3c. Finding Triage
+
+For each finding (or correlated group):
+
+1. **Filter false positives** using redacted match text and file path context:
+   - Discard matches in test/example/docs paths with placeholder patterns
+   - For dangerous file-type findings (`line: 0`), check if file is in `examples/`, `docs/`, or `test/` for potential downgrade
+   - Use `references/vulnerability-patterns.md` § Framework-Specific False Positive Notes to evaluate vuln findings
 
 2. **Classify severity** using `references/severity-guide.md`:
-   - Start with the base severity from the pattern match
-   - Downgrade if in test/example/docs files
-   - Upgrade if in production config or deployment scripts
-   - Downgrade if redacted value matches placeholder patterns
-   - Upgrade if file path indicates production context (`deploy/`, `infra/`, `terraform/`, `.github/workflows/`)
+   - Start with base severity from pattern match
+   - Apply contextual adjustments (file path, production indicators)
+   - For correlated groups, use the highest severity in the group
 
-3. **Assign confidence:**
-   - **High:** exact match on known secret format (e.g., `AKIA` prefix, `ghp_` prefix), or dangerous file type with unambiguous extension (`.pem`, `.tfstate`)
-   - **Medium:** generic pattern match requiring context (e.g., password assignment, high-entropy string)
-   - **Low:** heuristic match with uncertain value
+3. **Assess exploitability** (vulnerability findings only — NOT secret findings):
+   - For vuln findings (SQL injection, XSS, command injection, SSRF), you MAY read the surrounding function (~10 lines above/below) to assess whether user input can reach the sink
+   - Do NOT read files flagged for secret findings
+   - Rate: Exploitable / Likely Exploitable / Needs Investigation / Likely False Positive
 
-4. **Generate remediation:** tailor advice to the repo's tech stack. Reference environment variables, secrets managers, or `.gitignore` as appropriate. For dangerous file-type findings, always recommend adding the pattern to `.gitignore` and purging from git history.
+4. **Assign confidence**: High (vendor-specific prefix or unambiguous file type), Medium (generic pattern needing context), Low (heuristic match)
 
-After completing Phase 3 analysis, produce an **augmented findings list** by adding three fields to each finding from Phase 2:
-- `"confidence"`: `"High"`, `"Medium"`, or `"Low"` (see `references/severity-guide.md`)
+#### 3d. Executive Summary
+
+Before the detailed findings, produce a prioritized summary:
+
+1. **Top 3 actions** — the three most impactful things to fix first, with one sentence each explaining why
+2. **Blast radius assessment** — what an attacker could access if the worst findings are exploited
+3. **Positive observations** — note good security practices observed (e.g., "secrets are properly gitignored", "no production credentials found")
+
+#### 3e. Augmented Findings
+
+After triage, produce an **augmented findings list** by adding three fields to each finding:
+- `"confidence"`: `"High"`, `"Medium"`, or `"Low"`
 - `"context"`: one sentence explaining the severity rating and confidence — e.g., *"Live Stripe key in a production deploy script; no placeholder markers present."*
-- `"commit"`: the git commit hash and author for the line, if available from `git log -L <line>,<line>:<file>`; omit the field if git is unavailable
+- `"commit"`: the git commit hash and author for the line, if available from `git log -L <line>,<line>:<file>`; omit if git is unavailable
 
-This augmented list is what gets passed to report generation. The scanner scripts do not add these fields — only the LLM can determine them.
+This augmented list is what gets passed to report generation.
 
 ### Phase 4: Report Generation
 
