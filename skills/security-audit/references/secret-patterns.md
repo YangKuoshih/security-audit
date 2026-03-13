@@ -234,3 +234,75 @@ Suspected secrets needing manual verification. Higher false-positive rate.
 - **Note**: Not a regex pattern. Implemented in `scripts/scan-secrets.py` using Shannon entropy calculation. Strings > 20 characters with entropy > 4.5 in assignment contexts (`key`, `secret`, `token`, `password`, `credential` variable names) are flagged.
 - **Description**: Catches secrets that don't match any specific format pattern but exhibit high randomness.
 - **Source**: Based on [detect-secrets](https://github.com/Yelp/detect-secrets) entropy detection approach.
+
+---
+
+## Dangerous File Types
+
+File-level findings where the mere presence of the file in a git repository is a security issue, regardless of contents. These are detected via `git ls-files --cached` (only tracked files are flagged — gitignored files are fine).
+
+All dangerous file findings use `line: 0` to indicate a file-level finding, not a line-level match. The match field is set to `"(entire file)"`.
+
+### Terraform State Files
+
+- **Pattern**: `*.tfstate`, `*.tfstate.backup`
+- **Severity**: HIGH
+- **Pattern IDs**: `dangerous-file-tfstate`, `dangerous-file-tfstate-backup`
+- **Description**: Terraform state files contain a full inventory of infrastructure: resource IDs, ARNs, account IDs, VPC IDs, S3 bucket names, endpoints, and sometimes secrets (database passwords, API keys stored in resource attributes). They should never be committed to version control — use remote state backends (S3, GCS, Terraform Cloud) instead.
+- **Remediation**: Add `*.tfstate` and `*.tfstate.backup` to `.gitignore`. Remove from git history with `git filter-repo`. Configure a remote state backend.
+
+### Terraform Output Files
+
+- **Pattern**: `*terraform-apply-output*`, `*terraform-plan-output*`
+- **Severity**: MEDIUM
+- **Pattern IDs**: `dangerous-file-tf-apply-output`, `dangerous-file-tf-plan-output`
+- **Description**: Captured output from `terraform apply` or `terraform plan` commands. These expose resource inventory details (VPC IDs, ARNs, endpoints, IP addresses) that aid infrastructure mapping by attackers. Apply output is higher risk than plan output as it reflects actual deployed state.
+- **Remediation**: Add these files to `.gitignore`. If infrastructure details must be shared, use Terraform outputs with `sensitive = true` and share via secure channels.
+
+### Private Key Files
+
+- **Pattern**: `*.pem`, `*.key`, `*.p12`, `*.pfx`
+- **Severity**: CRITICAL
+- **Pattern IDs**: `dangerous-file-pem`, `dangerous-file-key`, `dangerous-file-p12`, `dangerous-file-pfx`
+- **Description**: Private key files (PEM, DER, PKCS#12) should never be committed. Even if the key is password-protected (`.p12`, `.pfx`), the encrypted file in a public repo enables offline brute-force attacks. `.pem` and `.key` files are often unencrypted.
+- **Remediation**: Add `*.pem *.key *.p12 *.pfx` to `.gitignore`. Remove from git history. Rotate any exposed key material. Store keys in secrets managers or use certificate authorities that issue short-lived certs.
+
+### Java Keystore
+
+- **Pattern**: `*.jks`
+- **Severity**: HIGH
+- **Pattern ID**: `dangerous-file-jks`
+- **Description**: Java KeyStore files contain private keys and certificates. Though password-protected, they enable offline brute-force attacks if committed.
+- **Remediation**: Add `*.jks` to `.gitignore`. Remove from git history. Rotate keystores and re-issue certificates.
+
+### Cloud Credentials Files
+
+- **Pattern**: `credentials.json` (exact name), `service-account*.json`
+- **Severity**: HIGH
+- **Pattern IDs**: `dangerous-file-credentials-json`, `dangerous-file-service-account`
+- **Description**: Cloud provider credential files, most commonly GCP service account keys or AWS credential exports. These grant programmatic access to cloud resources.
+- **Remediation**: Add to `.gitignore`. Use workload identity federation or IAM roles instead of exported key files. Rotate compromised service account keys.
+
+### Terraform Provider Cache
+
+- **Pattern**: `.terraform/` directory contents
+- **Severity**: MEDIUM
+- **Pattern ID**: `dangerous-file-terraform-cache`
+- **Description**: The `.terraform/` directory contains downloaded provider plugins, module caches, and state lock files. It should always be gitignored. Committing it bloats the repo and may expose internal module registry URLs.
+- **Remediation**: Add `.terraform/` to `.gitignore`. Remove from git history.
+
+### Database Files
+
+- **Pattern**: `*.sqlite`, `*.db`
+- **Severity**: MEDIUM
+- **Pattern IDs**: `dangerous-file-sqlite`, `dangerous-file-db`
+- **Description**: Database files may contain sensitive application data, user records, or credentials. They should not be committed to version control.
+- **Remediation**: Add `*.sqlite *.db` to `.gitignore`. If test databases are needed, use fixtures or migration scripts instead.
+
+### Files with "secret" in Name
+
+- **Pattern**: `*secret*` (excluding `*.example`, `*.sample`, `*.template`, `*.md`)
+- **Severity**: MEDIUM
+- **Pattern ID**: `dangerous-file-secret-name`
+- **Description**: Files with "secret" in their name often contain sensitive configuration, keys, or credentials. Excluded extensions (`.example`, `.sample`, `.template`, `.md`) are commonly used for documentation or templates.
+- **Remediation**: Verify contents. If the file contains real secrets, remove from git and add to `.gitignore`. If it's a template, rename to include `.example` or `.template` extension.

@@ -28,6 +28,18 @@ Scan a codebase for hardcoded secrets, credentials, API keys, and common securit
 
 Throughout this skill, `${CLAUDE_PLUGIN_ROOT}` refers to the directory where this plugin is installed. Claude Code sets this automatically when loading a plugin. If the variable is not available in your environment, resolve it as the parent directory of the `skills/` folder containing this file (i.e., the repository root of the security-audit plugin).
 
+## Secret Data Safety
+
+**This skill MUST NOT exfiltrate discovered secrets.** All findings are for the user's eyes only — to help them remediate issues in their own codebase.
+
+Rules that apply to ALL phases:
+
+1. **Never read files known or suspected to contain secrets into LLM context.** When Phase 2 flags a file, do NOT use the Read tool to open that file. Work only from the redacted JSONL output.
+2. **Never echo, log, or output raw secret values.** All matches in scanner output are already redacted. If you must reference a finding, use the redacted form only.
+3. **Never send findings or file contents to external services** — no web fetches, no API calls, no MCP tool calls that transmit finding data outside the local machine.
+4. **The report is a local file.** Do not offer to upload, share, or transmit the report. The user decides what to do with it.
+5. **No-shell fallback caution:** If you must read source files directly (no shell access), do NOT read files that match dangerous file patterns (`.tfstate`, `.pem`, `.key`, `.p12`, `.pfx`, `.jks`, `credentials.json`, `service-account*.json`). For other files, scan line by line and discard each line's content from your response after checking it — never quote raw secret values in your output.
+
 ## Workflow
 
 Execute the following four phases in order. Adapt based on environment capabilities detected in Phase 1.
@@ -70,35 +82,50 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.py" --
 
 **If no shell access (fallback path):**
 
-Read files directly and apply pattern knowledge from `references/secret-patterns.md` and `references/vulnerability-patterns.md`. Scan each file for:
+Read files directly and apply pattern knowledge from `references/secret-patterns.md` and `references/vulnerability-patterns.md`. **Important: follow Secret Data Safety rules** — skip files matching dangerous file patterns entirely (`.tfstate`, `.pem`, `.key`, `.p12`, `.pfx`, `.jks`, `credentials.json`, `service-account*.json`) and flag them as file-level findings without reading their contents. For other files, scan for:
 - Known secret formats (AWS keys, GitHub tokens, private keys, etc.)
 - Vulnerability patterns (SQL injection sinks, XSS vectors, weak crypto)
 - High-entropy strings that may be secrets
 
-Output findings in the same format: file, line number, redacted match, pattern name, base severity.
+When a secret is found, **redact it immediately** — never include the raw value in your output. Output findings in the same format: file, line number, redacted match, pattern name, base severity.
+
+### Phase 2b: Dangerous File Type Scan
+
+This phase runs automatically as part of the scanner scripts (both bash and Python). It detects files that should never be committed to git, regardless of their contents.
+
+**How it works:** Uses `git ls-files --cached` to check only tracked files. Gitignored files are NOT flagged. Results are appended to the same output file as Phase 2 findings, using `line: 0` to indicate file-level findings.
+
+**Detected file types:** Terraform state (`.tfstate`), private keys (`.pem`, `.key`, `.p12`, `.pfx`), Java keystores (`.jks`), cloud credentials (`credentials.json`, `service-account*.json`), Terraform cache (`.terraform/`), database files (`.sqlite`, `.db`), Terraform output files, and files with "secret" in the name.
+
+See `references/secret-patterns.md` § Dangerous File Types for the complete list with pattern IDs and descriptions.
+
+**If no shell access (fallback path):**
+
+Use `git ls-files --cached` knowledge to ask the user about tracked files matching dangerous patterns. Flag any matches with `line: 0` and `match: "(entire file)"` in findings.
 
 ### Phase 3: LLM Analysis
 
-Review the raw findings from Phase 2 and for each finding:
+Review the **redacted** findings from Phase 2 (the JSONL output file). Do NOT read the original source files that contain flagged secrets — work only from the scanner output and file path context.
 
 1. **Filter false positives:**
    - Discard matches in test fixtures, example files, documentation, and comments that use placeholder values
-   - Recognize common placeholders: `xxx`, `changeme`, `TODO`, `example`, `test`, `dummy`, `fake`, `sample`, `your-key-here`, `INSERT_KEY`
+   - Recognize common placeholders from the redacted match field: patterns like `xx...xx`, `ch...me`, etc.
    - Check if the file path suggests non-production context: `test/`, `spec/`, `__tests__/`, `examples/`, `docs/`, `fixtures/`
+   - For dangerous file-type findings (`line: 0`), check if the file is in `examples/`, `docs/`, or `test/` directories for potential downgrade
 
 2. **Classify severity** using `references/severity-guide.md`:
    - Start with the base severity from the pattern match
    - Downgrade if in test/example/docs files
    - Upgrade if in production config or deployment scripts
-   - Downgrade if value matches placeholder patterns
-   - Upgrade if paired with production URLs or live service endpoints
+   - Downgrade if redacted value matches placeholder patterns
+   - Upgrade if file path indicates production context (`deploy/`, `infra/`, `terraform/`, `.github/workflows/`)
 
 3. **Assign confidence:**
-   - **High:** exact match on known secret format (e.g., `AKIA` prefix, `ghp_` prefix)
+   - **High:** exact match on known secret format (e.g., `AKIA` prefix, `ghp_` prefix), or dangerous file type with unambiguous extension (`.pem`, `.tfstate`)
    - **Medium:** generic pattern match requiring context (e.g., password assignment, high-entropy string)
    - **Low:** heuristic match with uncertain value
 
-4. **Generate remediation:** tailor advice to the repo's tech stack. Reference environment variables, secrets managers, or `.gitignore` as appropriate.
+4. **Generate remediation:** tailor advice to the repo's tech stack. Reference environment variables, secrets managers, or `.gitignore` as appropriate. For dangerous file-type findings, always recommend adding the pattern to `.gitignore` and purging from git history.
 
 After completing Phase 3 analysis, produce an **augmented findings list** by adding three fields to each finding from Phase 2:
 - `"confidence"`: `"High"`, `"Medium"`, or `"Low"` (see `references/severity-guide.md`)
@@ -143,7 +170,7 @@ Format the report directly following this structure:
 - **Remediation:** <actionable steps>
 ```
 
-Group findings by severity (Critical, High, Medium, Low). Assign sequential IDs per severity tier (C-001, H-001, M-001, L-001). Never echo full secret values — always redact.
+Group findings by severity (Critical, High, Medium, Low). Assign sequential IDs per severity tier (C-001, H-001, M-001, L-001). **Never echo full secret values — always use the redacted form from scanner output.** For file-level findings (`line: 0`), display as `<path>:0 (entire file)` and include the file-type-specific remediation from `references/secret-patterns.md`.
 
 End with scan metadata: excluded directories, pattern counts, config source.
 

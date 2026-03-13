@@ -111,7 +111,11 @@ emit_finding() {
   local file="$1" line="$2" match="$3" pattern_id="$4" pattern_name="$5" severity="$6" output="$7"
 
   local redacted
-  redacted=$(redact_match "$match")
+  if [[ "$match" == "(entire file)" ]]; then
+    redacted="$match"
+  else
+    redacted=$(redact_match "$match")
+  fi
 
   # Make path relative to target
   local rel_path="$file"
@@ -181,6 +185,11 @@ declare -a P_SEV=() P_ID=() P_NAME=() P_REGEX=()
 PATTERN_COUNT=0
 
 while IFS=$'\t' read -r sev pid pname regex; do
+  # Strip carriage returns (CRLF line endings on Windows)
+  sev="${sev//$'\r'/}"
+  pid="${pid//$'\r'/}"
+  pname="${pname//$'\r'/}"
+  regex="${regex//$'\r'/}"
   [[ "$sev" =~ ^#.*$ || -z "$sev" ]] && continue
   P_SEV+=("$sev")
   P_ID+=("$pid")
@@ -250,5 +259,99 @@ while [ "$i" -lt "$PATTERN_COUNT" ]; do
   rm -f "$local_results"
   i=$((i + 1))
 done
+
+# ─── Dangerous File Type Scan ─────────────────────────────────────────────
+
+scan_dangerous_files() {
+  local target="$1" output="$2"
+
+  # Only works in a git repo
+  if ! command -v git > /dev/null 2>&1; then
+    return
+  fi
+  if ! git -C "$target" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    return
+  fi
+
+  local tracked_files
+  tracked_files=$(mktemp)
+  git -C "$target" ls-files --cached 2>/dev/null > "$tracked_files"
+
+  # Define patterns: glob_pattern|severity|pattern_id|pattern_name
+  local -a DANGEROUS_PATTERNS=(
+    '*.tfstate|HIGH|dangerous-file-tfstate|Terraform State Committed'
+    '*.tfstate.backup|HIGH|dangerous-file-tfstate-backup|Terraform State Backup Committed'
+    '*terraform-apply-output*|MEDIUM|dangerous-file-tf-apply-output|Terraform Apply Output Committed'
+    '*terraform-plan-output*|MEDIUM|dangerous-file-tf-plan-output|Terraform Plan Output Committed'
+    '*.pem|CRITICAL|dangerous-file-pem|Private Key File Committed'
+    '*.key|CRITICAL|dangerous-file-key|Private Key File Committed'
+    '*.p12|CRITICAL|dangerous-file-p12|Certificate Bundle Committed'
+    '*.pfx|CRITICAL|dangerous-file-pfx|Certificate Bundle Committed'
+    '*.jks|HIGH|dangerous-file-jks|Java Keystore Committed'
+    '*.sqlite|MEDIUM|dangerous-file-sqlite|Database File Committed'
+    '*.db|MEDIUM|dangerous-file-db|Database File Committed'
+  )
+
+  local count=0
+
+  for entry in "${DANGEROUS_PATTERNS[@]}"; do
+    IFS='|' read -r glob sev pid pname <<< "$entry"
+    while IFS= read -r filepath; do
+      [[ -z "$filepath" ]] && continue
+      emit_finding "${target%/}/$filepath" 0 "(entire file)" "$pid" "$pname" "$sev" "$output"
+      count=$((count + 1))
+      FINDING_COUNT=$((FINDING_COUNT + 1))
+    done < <(grep -i -E "$(echo "$glob" | sed 's/\./\\./g; s/\*/.*/g')$" "$tracked_files" || true)
+  done
+
+  # Special: credentials.json (exact basename match)
+  while IFS= read -r filepath; do
+    [[ -z "$filepath" ]] && continue
+    local base
+    base=$(basename "$filepath")
+    if [[ "$base" == "credentials.json" ]]; then
+      emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-credentials-json" "Credentials File Committed" "HIGH" "$output"
+      count=$((count + 1))
+      FINDING_COUNT=$((FINDING_COUNT + 1))
+    fi
+  done < "$tracked_files"
+
+  # Special: service-account*.json
+  while IFS= read -r filepath; do
+    [[ -z "$filepath" ]] && continue
+    local base
+    base=$(basename "$filepath")
+    if [[ "$base" == service-account*.json ]]; then
+      emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-service-account" "Service Account Key Committed" "HIGH" "$output"
+      count=$((count + 1))
+      FINDING_COUNT=$((FINDING_COUNT + 1))
+    fi
+  done < "$tracked_files"
+
+  # Special: .terraform/ directory files
+  while IFS= read -r filepath; do
+    [[ -z "$filepath" ]] && continue
+    emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-terraform-cache" "Terraform Provider Cache Committed" "MEDIUM" "$output"
+    count=$((count + 1))
+    FINDING_COUNT=$((FINDING_COUNT + 1))
+  done < <(grep -E '(^|/)\.terraform/' "$tracked_files" || true)
+
+  # Special: *secret* files (excluding .example, .sample, .template, .md)
+  while IFS= read -r filepath; do
+    [[ -z "$filepath" ]] && continue
+    # Skip excluded extensions
+    case "$filepath" in
+      *.example|*.sample|*.template|*.md) continue ;;
+    esac
+    emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-secret-name" "Possible Secrets File Committed" "MEDIUM" "$output"
+    count=$((count + 1))
+    FINDING_COUNT=$((FINDING_COUNT + 1))
+  done < <(grep -i 'secret' "$tracked_files" | grep -v -E '\.(example|sample|template|md)$' || true)
+
+  rm -f "$tracked_files"
+  echo "Dangerous file types found: $count" >&2
+}
+
+scan_dangerous_files "$TARGET_DIR" "$OUTPUT_FILE"
 
 echo "Scan complete. Findings: $FINDING_COUNT" >&2

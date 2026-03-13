@@ -45,6 +45,21 @@ Apply these when evidence suggests the finding is less impactful than the base s
 - Variable name contains: `dev`, `local`, `test`, `staging` (in combination with secret-like value)
 - Docker Compose file with `environment` section in development context
 
+### File-Type Findings (Dangerous Files)
+
+File-type findings (identified by `line: 0` and `match: "(entire file)"`) have their own severity logic:
+
+**Base severities:**
+- **CRITICAL**: Private keys and certificate bundles (`.pem`, `.key`, `.p12`, `.pfx`) — always critical regardless of context, as key material exposure is irreversible
+- **HIGH**: State files and credential files (`.tfstate`, `.jks`, `credentials.json`, `service-account*.json`) — expose infrastructure details or access credentials
+- **MEDIUM**: Output files, caches, database files, and files with "secret" in name — may expose sensitive data depending on contents
+
+**Contextual downgrade for file-type findings:**
+- If the file is in `examples/`, `docs/`, or `test/` directories AND is clearly a sample (e.g., empty `.pem` placeholder, example `credentials.json` with fake values), downgrade by one tier
+- Do NOT downgrade private key files (`.pem`, `.key`, `.p12`, `.pfx`) in `test/` if they contain real key material — even test keys can be reused or leak signing authority
+
+**No upgrade triggers apply** — file-type findings are already assessed at their ceiling. The contents may reveal additional content-based findings (e.g., a `.tfstate` file may also trigger pattern matches for AWS account IDs), which are reported separately.
+
 ### Upgrade Triggers (Increase Severity by One Tier)
 
 Apply these when evidence suggests the finding is more impactful than the base severity implies. Multiple upgrade triggers can stack, but never increase above Critical.

@@ -6,7 +6,7 @@
 </picture>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-58%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-83%20passing-brightgreen.svg)](#testing)
 [![Patterns](https://img.shields.io/badge/patterns-44%20rules-orange.svg)](skills/security-audit/scripts/patterns.dat)
 
 </div>
@@ -52,20 +52,34 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 
 </td>
 </tr>
+<tr>
+<td colspan="2">
+
+**Dangerous File Types** — 15 file patterns checked via `git ls-files`
+
+Files that should never be committed, regardless of contents: Terraform state (`.tfstate`), private keys (`.pem`, `.key`, `.p12`, `.pfx`), Java keystores (`.jks`), cloud credentials (`credentials.json`, `service-account*.json`), Terraform cache (`.terraform/`), database files (`.sqlite`, `.db`), and files with "secret" in the name. Only git-tracked files are flagged — gitignored files are fine.
+
+</td>
+</tr>
 </table>
 
 ## Quick Start
 
-**Install via skills registry:**
+**Install globally (available in every project, across 41+ agents):**
 ```bash
-claude plugin add security-audit
+npx skills add YangKuoshih/security-audit -g --all
 ```
 
-**Or clone and use locally:**
+**Or install per-project:**
+```bash
+npx skills add YangKuoshih/security-audit
+```
+
+**Or use directly as a Claude Code plugin:**
 ```bash
 git clone https://github.com/YangKuoshih/security-audit.git
 
-# Use as a Claude Code plugin (from any project directory)
+# From any project directory
 claude --plugin-dir /path/to/security-audit
 ```
 
@@ -81,36 +95,38 @@ claude --plugin-dir /path/to/security-audit
 ## How It Works
 
 ```
-                ┌─────────────────────────────────────────────────┐
-                │              /security-audit                     │
-                └────────────────────┬────────────────────────────┘
-                                     │
-                     ┌───────────────┼───────────────┐
-                     ▼               ▼               ▼
-              ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-              │   Phase 1   │ │   Phase 2   │ │   Phase 3   │
-              │   Setup     │ │   Scan      │ │   Analyze   │
-              │             │ │             │ │             │
-              │ Detect env  │ │ 44 regex    │ │ LLM filters │
-              │ Load config │ │ patterns    │ │ false pos.  │
-              │ Build file  │ │ + entropy   │ │ Classifies  │
-              │ list        │ │ detection   │ │ severity    │
-              └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
-                     │               │               │
-                     └───────────────┼───────────────┘
-                                     ▼
-                          ┌─────────────────────┐
-                          │      Phase 4        │
-                          │      Report         │
-                          │                     │
-                          │  Markdown / SARIF   │
-                          │  / JSON output      │
-                          └─────────────────────┘
+              ┌─────────────────────────────────────────────────┐
+              │              /security-audit                     │
+              └────────────────────┬────────────────────────────┘
+                                   │
+               ┌───────────────┬───┴───┬───────────────┐
+               ▼               ▼       ▼               ▼
+        ┌─────────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐
+        │   Phase 1   │ │ Phase 2  │ │Phase 2b  │ │   Phase 3   │
+        │   Setup     │ │ Scan     │ │ File     │ │   Analyze   │
+        │             │ │          │ │ Types    │ │             │
+        │ Detect env  │ │ 44 regex │ │ 15 file  │ │ LLM filters │
+        │ Load config │ │ patterns │ │ patterns │ │ false pos.  │
+        │ Build file  │ │ +entropy │ │ via git  │ │ Classifies  │
+        │ list        │ │detection │ │ ls-files │ │ severity    │
+        └──────┬──────┘ └────┬─────┘ └────┬─────┘ └──────┬──────┘
+               │             │            │               │
+               └─────────────┴─────┬──────┴───────────────┘
+                                   ▼
+                        ┌─────────────────────┐
+                        │      Phase 4        │
+                        │      Report         │
+                        │                     │
+                        │  Markdown / SARIF   │
+                        │  / JSON output      │
+                        └─────────────────────┘
 ```
 
-**Shell available?** Runs `scan-secrets.sh` (bash/grep) or `scan-secrets.py` (Python with entropy detection) for fast deterministic scanning, then the LLM analyzes results.
+**Shell available?** Runs `scan-secrets.sh` (bash/grep) or `scan-secrets.py` (Python with entropy detection) for fast deterministic scanning, including dangerous file type detection via `git ls-files`. The LLM then analyzes redacted results.
 
-**No shell?** The LLM reads files directly using the pattern knowledge from `references/` — slower but works on sandboxed platforms.
+**No shell?** The LLM reads files directly using the pattern knowledge from `references/` — slower but works on sandboxed platforms. Dangerous file types are flagged without reading their contents.
+
+**Secret safety:** Discovered secrets are never passed to the LLM or any third party. Scanner output is redacted before the LLM sees it. The report is a local file — you decide what to do with it.
 
 ## Report Output
 
@@ -214,7 +230,7 @@ security-audit/
 │           ├── sample-report.sarif.json    # Example SARIF output
 │           └── security-audit.yml      # Example configuration
 ├── tests/
-│   ├── test-e2e.sh                     # 58-assertion integration test
+│   ├── test-e2e.sh                     # 83-assertion integration test
 │   └── fixtures/sample-repo/           # Test files with known secrets/vulns
 ├── docs/plans/                         # Design documents
 ├── LICENSE                             # Apache 2.0
@@ -236,6 +252,7 @@ Planned coverage:
 - Bash scanner (21 assertions) — pattern detection, safe file validation, output format, redaction
 - Python scanner (6 assertions) — parity with bash, entropy detection, safe file
 - Report generation (25 assertions) — Markdown structure, SARIF 2.1.0 compliance, JSON validity
+- Dangerous file detection (24 assertions) — all 15 file type patterns, output format, gitignore exclusion, bash/Python parity
 - Self-scan (1 assertion) — our own code contains zero Critical findings
 
 ## Design

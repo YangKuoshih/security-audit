@@ -335,6 +335,139 @@ def make_relative(filepath: str, target: str) -> str:
         return filepath
 
 
+# ─── Dangerous File Type Scanning ─────────────────────────────────────────
+
+DANGEROUS_FILE_PATTERNS: list[tuple[str, str, str, str]] = [
+    # (glob_pattern, severity, pattern_id, pattern_name)
+    ("*.tfstate", "HIGH", "dangerous-file-tfstate", "Terraform State Committed"),
+    ("*.tfstate.backup", "HIGH", "dangerous-file-tfstate-backup", "Terraform State Backup Committed"),
+    ("*terraform-apply-output*", "MEDIUM", "dangerous-file-tf-apply-output", "Terraform Apply Output Committed"),
+    ("*terraform-plan-output*", "MEDIUM", "dangerous-file-tf-plan-output", "Terraform Plan Output Committed"),
+    ("*.pem", "CRITICAL", "dangerous-file-pem", "Private Key File Committed"),
+    ("*.key", "CRITICAL", "dangerous-file-key", "Private Key File Committed"),
+    ("*.p12", "CRITICAL", "dangerous-file-p12", "Certificate Bundle Committed"),
+    ("*.pfx", "CRITICAL", "dangerous-file-pfx", "Certificate Bundle Committed"),
+    ("*.jks", "HIGH", "dangerous-file-jks", "Java Keystore Committed"),
+    ("*.sqlite", "MEDIUM", "dangerous-file-sqlite", "Database File Committed"),
+    ("*.db", "MEDIUM", "dangerous-file-db", "Database File Committed"),
+]
+
+
+def scan_dangerous_files(target: str) -> list[dict]:
+    """Scan for dangerous file types tracked by git."""
+    findings = []
+    target_path = Path(target).resolve()
+
+    # Only works in a git repo
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(target_path), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return findings
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return findings
+
+    # Get tracked files only (--cached = staged/committed, no --others)
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(target_path), "ls-files", "--cached"],
+            capture_output=True, text=True, timeout=30,
+        )
+        tracked_files = result.stdout.strip().splitlines()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return findings
+
+    if not tracked_files:
+        return findings
+
+    import fnmatch
+
+    # Check glob-based patterns
+    for glob_pat, severity, pattern_id, pattern_name in DANGEROUS_FILE_PATTERNS:
+        for filepath in tracked_files:
+            basename = Path(filepath).name
+            # Match against basename for extension patterns, full path for wildcard patterns
+            if "*" in glob_pat and not glob_pat.startswith("*."):
+                # Pattern like *terraform-apply-output* — match against full path and basename
+                if fnmatch.fnmatch(filepath.lower(), glob_pat.lower()) or fnmatch.fnmatch(basename.lower(), glob_pat.lower()):
+                    findings.append({
+                        "file": str(target_path / filepath),
+                        "line": 0,
+                        "match": "(entire file)",
+                        "pattern_id": pattern_id,
+                        "pattern_name": pattern_name,
+                        "severity": severity,
+                    })
+            else:
+                # Extension pattern like *.tfstate — match basename
+                if fnmatch.fnmatch(basename.lower(), glob_pat.lower()):
+                    findings.append({
+                        "file": str(target_path / filepath),
+                        "line": 0,
+                        "match": "(entire file)",
+                        "pattern_id": pattern_id,
+                        "pattern_name": pattern_name,
+                        "severity": severity,
+                    })
+
+    # Special: credentials.json
+    for filepath in tracked_files:
+        if Path(filepath).name == "credentials.json":
+            findings.append({
+                "file": str(target_path / filepath),
+                "line": 0,
+                "match": "(entire file)",
+                "pattern_id": "dangerous-file-credentials-json",
+                "pattern_name": "Credentials File Committed",
+                "severity": "HIGH",
+            })
+
+    # Special: service-account*.json
+    for filepath in tracked_files:
+        basename = Path(filepath).name
+        if fnmatch.fnmatch(basename.lower(), "service-account*.json"):
+            findings.append({
+                "file": str(target_path / filepath),
+                "line": 0,
+                "match": "(entire file)",
+                "pattern_id": "dangerous-file-service-account",
+                "pattern_name": "Service Account Key Committed",
+                "severity": "HIGH",
+            })
+
+    # Special: .terraform/ directory
+    for filepath in tracked_files:
+        if ".terraform/" in filepath or filepath.startswith(".terraform/"):
+            findings.append({
+                "file": str(target_path / filepath),
+                "line": 0,
+                "match": "(entire file)",
+                "pattern_id": "dangerous-file-terraform-cache",
+                "pattern_name": "Terraform Provider Cache Committed",
+                "severity": "MEDIUM",
+            })
+
+    # Special: *secret* in filename (excluding .example, .sample, .template, .md)
+    excluded_extensions = {".example", ".sample", ".template", ".md"}
+    for filepath in tracked_files:
+        basename = Path(filepath).name
+        if "secret" in basename.lower():
+            ext = Path(basename).suffix.lower()
+            if ext not in excluded_extensions:
+                findings.append({
+                    "file": str(target_path / filepath),
+                    "line": 0,
+                    "match": "(entire file)",
+                    "pattern_id": "dangerous-file-secret-name",
+                    "pattern_name": "Possible Secrets File Committed",
+                    "severity": "MEDIUM",
+                })
+
+    return findings
+
+
 def write_findings(
     findings: list[dict],
     output_path: str,
@@ -404,6 +537,11 @@ def main() -> None:
     for filepath in files:
         file_findings = scan_file(filepath, patterns, args.entropy)
         all_findings.extend(file_findings)
+
+    # Scan for dangerous file types (between pattern scan and output)
+    dangerous_findings = scan_dangerous_files(args.target)
+    print(f"Dangerous file types found: {len(dangerous_findings)}", file=sys.stderr)
+    all_findings.extend(dangerous_findings)
 
     # Write output
     write_findings(all_findings, args.output, args.target)
