@@ -231,9 +231,102 @@ Suspected secrets needing manual verification. Higher false-positive rate.
 
 ### High-Entropy String Detection
 
-- **Note**: Not a regex pattern. Implemented in `scripts/scan-secrets.py` using Shannon entropy calculation. Strings > 20 characters with entropy > 4.5 in assignment contexts (`key`, `secret`, `token`, `password`, `credential` variable names) are flagged.
-- **Description**: Catches secrets that don't match any specific format pattern but exhibit high randomness.
-- **Source**: Based on [detect-secrets](https://github.com/Yelp/detect-secrets) entropy detection approach.
+- **Note**: Not a regex pattern. Implemented in `scripts/scan-secrets.py` using charset-aware Shannon entropy calculation. Thresholds: hex strings > 3.5 bits, base64 strings > 4.2 bits, generic strings > 4.5 bits. Minimum string length: 20 characters. Only triggers on lines with secret-like variable names.
+- **Description**: Catches secrets that don't match any specific format pattern but exhibit high randomness. Charset-aware thresholds enable detection of hex-encoded secrets (AES keys, HMAC secrets) that were previously invisible.
+- **False positives filtered**: UUIDs, URLs, semver strings, placeholder values.
+- **Source**: Based on [detect-secrets](https://github.com/Yelp/detect-secrets) entropy detection approach with hex/base64 split.
+
+---
+
+## Additional SaaS & Cloud Tokens
+
+### DigitalOcean
+
+- **PAT Regex**: `dop_v1_[a-f0-9]{64}`
+- **OAuth Regex**: `doo_v1_[a-f0-9]{64}`
+- **Severity**: CRITICAL (PAT), HIGH (OAuth)
+- **Pattern IDs**: `digitalocean-pat`, `digitalocean-oauth`
+- **Description**: DigitalOcean personal access tokens and OAuth tokens. Grants full API access to infrastructure.
+
+### HashiCorp Vault
+
+- **Regex**: `hvs\.[a-zA-Z0-9_-]{24,}`
+- **Severity**: CRITICAL
+- **Pattern ID**: `hashicorp-vault-token`
+- **Description**: HashiCorp Vault service tokens. Grants access to secrets stored in Vault — ironic to leak the secrets manager's own token.
+
+### Terraform Cloud
+
+- **Regex**: `[a-zA-Z0-9]{14}\.atlasv1\.[a-zA-Z0-9_-]{60,}`
+- **Severity**: CRITICAL
+- **Pattern ID**: `terraform-cloud-token`
+- **Description**: Terraform Cloud/Enterprise API tokens. Grants access to state files, plan/apply operations, and potentially infrastructure secrets.
+
+### Docker Hub
+
+- **Regex**: `dckr_pat_[a-zA-Z0-9_-]{27,}`
+- **Severity**: HIGH
+- **Pattern ID**: `docker-hub-pat`
+- **Description**: Docker Hub personal access tokens. Can push images — supply chain risk.
+
+### Grafana
+
+- **Cloud Regex**: `glc_[a-zA-Z0-9_+/=-]{32,}`
+- **Service Account Regex**: `glsa_[a-zA-Z0-9_+/=-]{32,}`
+- **Severity**: HIGH
+- **Pattern IDs**: `grafana-cloud-token`, `grafana-service-account`
+- **Description**: Grafana Cloud API keys and service account tokens. Grants access to dashboards, data sources, and alerting.
+
+### Shopify
+
+- **Private App Regex**: `shppa_[a-fA-F0-9]{32}`
+- **Access Token Regex**: `shpat_[a-fA-F0-9]{32}`
+- **Shared Secret Regex**: `shpss_[a-fA-F0-9]{32}`
+- **Severity**: HIGH
+- **Pattern IDs**: `shopify-private-app`, `shopify-access-token`, `shopify-shared-secret`
+- **Description**: Shopify API tokens. Grants access to store data, orders, and customer information.
+
+### Anthropic
+
+- **Regex**: `sk-ant-[a-zA-Z0-9_-]{20,}`
+- **Severity**: HIGH
+- **Pattern ID**: `anthropic-api-key`
+- **Description**: Anthropic API keys for Claude. Grants access to API usage and billing.
+
+### Linear
+
+- **Regex**: `lin_api_[a-zA-Z0-9]{40}`
+- **Severity**: HIGH
+- **Pattern ID**: `linear-api-key`
+- **Description**: Linear API keys. Grants access to project management data.
+
+### PlanetScale
+
+- **Regex**: `pscale_tkn_[a-zA-Z0-9_-]{40,}`
+- **Severity**: HIGH
+- **Pattern ID**: `planetscale-token`
+- **Description**: PlanetScale database tokens. Grants access to database branches and connections.
+
+### Figma
+
+- **Regex**: `figd_[a-zA-Z0-9_-]{40,}`
+- **Severity**: HIGH
+- **Pattern ID**: `figma-pat`
+- **Description**: Figma personal access tokens. Grants access to design files and team data.
+
+### Datadog
+
+- **Regex**: `(?i)(DD_API_KEY|datadog_api_key)\s*[:=]\s*['"]?[a-f0-9]{32}['"]?`
+- **Severity**: MEDIUM
+- **Pattern ID**: `datadog-api-key`
+- **Description**: Datadog API keys. Context-dependent — matches variable name + 32-char hex value. Higher false positive rate than prefix-based patterns.
+
+### Discord
+
+- **Regex**: `[MN][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}`
+- **Severity**: MEDIUM
+- **Pattern ID**: `discord-bot-token`
+- **Description**: Discord bot tokens. Format: base64-encoded user ID + timestamp + HMAC. Common in open-source repos.
 
 ---
 

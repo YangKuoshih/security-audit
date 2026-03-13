@@ -47,3 +47,19 @@ LOW	debug-enabled	Debug Mode Enabled	(debug|DEBUG)\s*[:=]\s*(true|True|1|['"]tru
 LOW	cors-wildcard	Permissive CORS (Wildcard)	(Access-Control-Allow-Origin|cors.*origin)\s*[:=]\s*['"]?\*['"]?
 LOW	ssl-verify-disabled	Disabled SSL/TLS Verification	(verify\s*[:=]\s*False|CURLOPT_SSL_VERIFYPEER\s*[:=]\s*(false|0)|rejectUnauthorized\s*[:=]\s*false|InsecureSkipVerify\s*[:=]\s*true)
 LOW	security-todo	Security TODO Comment	(TODO|FIXME|HACK|XXX).{0,50}(security|auth|password|secret|encrypt|vulnerability|csrf|xss|injection|sanitize)
+CRITICAL	digitalocean-pat	DigitalOcean Personal Access Token	dop_v1_[a-f0-9]{64}
+CRITICAL	hashicorp-vault-token	HashiCorp Vault Token	hvs\.[a-zA-Z0-9_-]{24,}
+CRITICAL	terraform-cloud-token	Terraform Cloud Token	[a-zA-Z0-9]{14}\.atlasv1\.[a-zA-Z0-9_-]{60,}
+HIGH	docker-hub-pat	Docker Hub Personal Access Token	dckr_pat_[a-zA-Z0-9_-]{27,}
+HIGH	grafana-cloud-token	Grafana Cloud Token	glc_[a-zA-Z0-9_+/=-]{32,}
+HIGH	grafana-service-account	Grafana Service Account Token	glsa_[a-zA-Z0-9_+/=-]{32,}
+HIGH	shopify-private-app	Shopify Private App Token	shppa_[a-fA-F0-9]{32}
+HIGH	shopify-access-token	Shopify Access Token	shpat_[a-fA-F0-9]{32}
+HIGH	shopify-shared-secret	Shopify Shared Secret	shpss_[a-fA-F0-9]{32}
+HIGH	anthropic-api-key	Anthropic API Key	sk-ant-[a-zA-Z0-9_-]{20,}
+HIGH	linear-api-key	Linear API Key	lin_api_[a-zA-Z0-9]{40}
+HIGH	planetscale-token	PlanetScale Token	pscale_tkn_[a-zA-Z0-9_-]{40,}
+HIGH	figma-pat	Figma Personal Access Token	figd_[a-zA-Z0-9_-]{40,}
+HIGH	digitalocean-oauth	DigitalOcean OAuth Token	doo_v1_[a-f0-9]{64}
+MEDIUM	datadog-api-key	Datadog API Key	(?i)(DD_API_KEY|datadog_api_key)\s*[:=]\s*['"]?[a-f0-9]{32}['"]?
+MEDIUM	discord-bot-token	Discord Bot Token	[MN][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}

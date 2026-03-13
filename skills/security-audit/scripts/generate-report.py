@@ -378,6 +378,24 @@ def get_remediation(pattern_id: str, severity: str) -> str:
         "dangerous-file-db": "Add *.db to .gitignore. Remove from git history. Use migration scripts or fixtures instead of database files.",
         "dangerous-file-secret-name": "Verify file contents. If it contains real secrets, add to .gitignore and remove from git history. If it's a template, rename with .example or .template extension.",
 
+        # Additional SaaS & Cloud tokens
+        "digitalocean-pat": "Revoke the token in the DigitalOcean API settings. Use environment variables or a secrets manager.",
+        "hashicorp-vault-token": "Revoke the token via 'vault token revoke'. Use short-lived tokens with appropriate policies.",
+        "terraform-cloud-token": "Revoke the token in Terraform Cloud user settings. Use team or organization tokens with scoped permissions.",
+        "docker-hub-pat": "Revoke the token in Docker Hub security settings. Use environment variables for CI/CD authentication.",
+        "grafana-cloud-token": "Revoke the token in Grafana Cloud API keys settings. Use service accounts with minimal permissions.",
+        "grafana-service-account": "Revoke the service account token in Grafana admin settings. Create a new token with appropriate scope.",
+        "shopify-private-app": "Rotate the token in Shopify admin. Use Shopify CLI authentication or environment variables.",
+        "shopify-access-token": "Rotate the token in Shopify partner dashboard. Store in environment variables.",
+        "shopify-shared-secret": "Rotate the shared secret in Shopify admin. Store in environment variables.",
+        "anthropic-api-key": "Revoke the key at console.anthropic.com. Use environment variables (ANTHROPIC_API_KEY).",
+        "linear-api-key": "Revoke the key in Linear API settings. Use environment variables.",
+        "planetscale-token": "Revoke the token in PlanetScale dashboard. Use environment variables for database connections.",
+        "figma-pat": "Revoke the token in Figma account settings. Use environment variables.",
+        "digitalocean-oauth": "Revoke the OAuth token in DigitalOcean API settings. Use environment variables.",
+        "datadog-api-key": "Revoke the key in Datadog organization settings. Use environment variables (DD_API_KEY).",
+        "discord-bot-token": "Reset the bot token in Discord Developer Portal. Use environment variables.",
+
         # Low
         "debug-enabled": "Ensure debug mode is disabled in production configurations.",
         "cors-wildcard": "Replace wildcard CORS origin (*) with specific allowed origins in production.",
