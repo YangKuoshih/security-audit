@@ -66,19 +66,21 @@ Execute the following four phases in order. Adapt based on environment capabilit
 
 **If shell access is available (primary path):**
 
-Run the bash scanner script:
+Run the Python scanner (preferred — faster, includes entropy detection):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.py" --target "<target_dir>" --patterns "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" --output "<output_file>"
+```
+
+Use `python3` or `python` depending on what is available. For incremental mode, add `--base-branch <branch>`.
+
+If Python is not available, fall back to the bash scanner:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.sh" "<target_dir>" "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" "<output_file>"
 ```
 
 For incremental mode, add `--base-branch <branch>`.
-
-If bash scanning fails but Python is available, fall back to (use `python3` or `python` depending on what is available):
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/scan-secrets.py" --target "<target_dir>" --patterns "${CLAUDE_PLUGIN_ROOT}/skills/security-audit/scripts/patterns.dat" --output "<output_file>"
-```
 
 **If no shell access (fallback path):**
 

@@ -142,7 +142,7 @@ emit_finding() {
 
 FILE_LIST=$(mktemp)
 CURRENT_PATTERN_TMP=""
-trap 'rm -f "$FILE_LIST" "$FILTERED_LIST" "$CURRENT_PATTERN_TMP" 2>/dev/null' EXIT
+trap 'rm -f "$FILE_LIST" "$FILTERED_LIST" "$CURRENT_PATTERN_TMP" 2>/dev/null; rm -f "$CANDIDATES" 2>/dev/null' EXIT
 
 if [[ -f "$TARGET_DIR" ]]; then
   # Single file mode
@@ -175,7 +175,7 @@ echo "Files to scan: $FILE_COUNT" >&2
 
 # ─── Load patterns ─────────────────────────────────────────────────────────
 
-declare -a P_SEV=() P_ID=() P_NAME=() P_REGEX=()
+declare -a P_SEV=() P_ID=() P_NAME=() P_REGEX=() P_REGEX_ERE=() P_CASEFLAG=()
 PATTERN_COUNT=0
 
 while IFS=$'\t' read -r sev pid pname regex; do
@@ -189,12 +189,26 @@ while IFS=$'\t' read -r sev pid pname regex; do
   P_ID+=("$pid")
   P_NAME+=("$pname")
   P_REGEX+=("$regex")
+
+  # Convert PCRE regex to ERE for bash =~ matching (used in Phase 2)
+  local_ere="$regex"
+  local_cf="0"
+  if [[ "$local_ere" == *'(?i)'* ]]; then
+    local_ere="${local_ere//\(\?i\)/}"
+    local_cf="1"
+  fi
+  local_ere="${local_ere//\\s/[[:space:]]}"
+  local_ere="${local_ere//\\d/[0-9]}"
+  local_ere="${local_ere//\\w/[[:alnum:]_]}"
+  P_REGEX_ERE+=("$local_ere")
+  P_CASEFLAG+=("$local_cf")
+
   PATTERN_COUNT=$((PATTERN_COUNT + 1))
 done < "$PATTERNS_FILE"
 
 echo "Patterns loaded: $PATTERN_COUNT" >&2
 
-# ─── Scan ───────────────────────────────────────────────────────────────────
+# ─── Scan (two-phase: bulk grep + pattern identification) ──────────────────
 
 # Clear output file
 if [[ "$OUTPUT_FILE" != "/dev/stdout" && "$OUTPUT_FILE" != "-" ]]; then
@@ -207,52 +221,68 @@ echo "Grep mode: $GREP_MODE" >&2
 
 FINDING_COUNT=0
 
-# For each pattern, grep across all files at once (much faster than per-file).
-# Use arithmetic loop instead of seq(1) for POSIX portability.
+grep_flag="-E"
+if [[ "$GREP_MODE" == "PCRE" ]]; then
+  grep_flag="-P"
+fi
+
+# Phase 1: Build mega-pattern (all regexes combined with |) for single-pass grep.
+# This reads all source files ONCE instead of once-per-pattern (60x fewer file reads).
+MEGA_PATTERN=""
 i=0
 while [ "$i" -lt "$PATTERN_COUNT" ]; do
-  local_sev="${P_SEV[$i]}"
-  local_id="${P_ID[$i]}"
-  local_name="${P_NAME[$i]}"
-  local_regex="${P_REGEX[$i]}"
-
-  # Build grep flags
-  grep_flag="-E"
-  if [[ "$GREP_MODE" == "PCRE" ]]; then
-    grep_flag="-P"
-  fi
-
-  # Grep all files for this pattern. -I skips binary, -n shows line numbers, -H shows filename.
-  # Store results in temp file to avoid subshell variable scope issues and pipefail exits.
-  # Track in CURRENT_PATTERN_TMP so the EXIT trap can clean it up on early exit.
-  local_results=$(mktemp)
-  CURRENT_PATTERN_TMP="$local_results"
-  tr '\n' '\0' < "$FILTERED_LIST" | xargs -0 grep -nIH $grep_flag -- "$local_regex" 2>/dev/null > "$local_results" || true
-
-  while IFS= read -r result; do
-    [[ -z "$result" ]] && continue
-
-    # Result format: filepath:linenum:line_content
-    local_file="${result%%:*}"
-    local_rest="${result#*:}"
-    local_linenum="${local_rest%%:*}"
-    local_content="${local_rest#*:}"
-
-    # Extract matched text
-    local_matched=""
-    local_matched=$(echo "$local_content" | grep -o${grep_flag#-} "$local_regex" 2>/dev/null | head -1) || true
-
-    if [[ -z "$local_matched" ]]; then
-      local_matched="(pattern match)"
-    fi
-
-    emit_finding "$local_file" "$local_linenum" "$local_matched" "$local_id" "$local_name" "$local_sev" "$OUTPUT_FILE"
-    FINDING_COUNT=$((FINDING_COUNT + 1))
-  done < "$local_results"
-
-  rm -f "$local_results"
+  [[ -n "$MEGA_PATTERN" ]] && MEGA_PATTERN="${MEGA_PATTERN}|"
+  MEGA_PATTERN="${MEGA_PATTERN}${P_REGEX[$i]}"
   i=$((i + 1))
 done
+
+CANDIDATES=$(mktemp)
+CURRENT_PATTERN_TMP="$CANDIDATES"
+tr '\n' '\0' < "$FILTERED_LIST" | xargs -0 grep -nIH $grep_flag -- "$MEGA_PATTERN" 2>/dev/null > "$CANDIDATES" || true
+
+candidate_count=$(wc -l < "$CANDIDATES" | tr -d ' ')
+echo "Candidate lines: $candidate_count" >&2
+
+# Phase 2: Identify which pattern(s) matched each candidate using pure bash =~.
+# This avoids spawning any subprocesses — all matching is done in-process.
+while IFS= read -r result; do
+  [[ -z "$result" ]] && continue
+
+  # Result format: filepath:linenum:line_content
+  local_file="${result%%:*}"
+  local_rest="${result#*:}"
+  local_linenum="${local_rest%%:*}"
+  local_content="${local_rest#*:}"
+
+  i=0
+  while [ "$i" -lt "$PATTERN_COUNT" ]; do
+    # Enable case-insensitive matching if pattern had (?i) flag
+    if [[ "${P_CASEFLAG[$i]}" == "1" ]]; then
+      shopt -s nocasematch
+    fi
+
+    if [[ "$local_content" =~ ${P_REGEX_ERE[$i]} ]]; then
+      local_matched="${BASH_REMATCH[0]}"
+      [[ -z "$local_matched" ]] && local_matched="(pattern match)"
+
+      # Restore case sensitivity before emit_finding (which uses =~)
+      if [[ "${P_CASEFLAG[$i]}" == "1" ]]; then
+        shopt -u nocasematch
+      fi
+
+      emit_finding "$local_file" "$local_linenum" "$local_matched" "${P_ID[$i]}" "${P_NAME[$i]}" "${P_SEV[$i]}" "$OUTPUT_FILE"
+      FINDING_COUNT=$((FINDING_COUNT + 1))
+    else
+      if [[ "${P_CASEFLAG[$i]}" == "1" ]]; then
+        shopt -u nocasematch
+      fi
+    fi
+
+    i=$((i + 1))
+  done
+done < "$CANDIDATES"
+
+rm -f "$CANDIDATES"
 
 # ─── Dangerous File Type Scan ─────────────────────────────────────────────
 

@@ -124,7 +124,7 @@ claude --plugin-dir /path/to/security-audit
                         └─────────────────────┘
 ```
 
-**Shell available?** Runs `scan-secrets.sh` (bash/grep) or `scan-secrets.py` (Python with entropy detection) for fast deterministic scanning, including dangerous file type detection via `git ls-files`. The LLM then analyzes redacted results.
+**Shell available?** Runs `scan-secrets.py` (Python, preferred — fast + entropy detection) or `scan-secrets.sh` (bash/grep fallback) for deterministic scanning, including dangerous file type detection via `git ls-files`. The LLM then analyzes redacted results.
 
 **No shell?** The LLM reads files directly using the pattern knowledge from `references/` — slower but works on sandboxed platforms. Dangerous file types are flagged without reading their contents.
 
