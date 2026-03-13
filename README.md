@@ -7,7 +7,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-83%20passing-brightgreen.svg)](#testing)
-[![Patterns](https://img.shields.io/badge/patterns-44%20rules-orange.svg)](skills/security-audit/scripts/patterns.dat)
+[![Patterns](https://img.shields.io/badge/patterns-60%20rules-orange.svg)](skills/security-audit/scripts/patterns.dat)
 
 </div>
 
@@ -25,7 +25,7 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 <tr>
 <td width="50%">
 
-**Secrets** — 34 patterns validated against [GitLeaks](https://github.com/gitleaks/gitleaks)
+**Secrets** — 50 patterns validated against [GitLeaks](https://github.com/gitleaks/gitleaks)
 
 - AWS, GCP, Azure credentials
 - GitHub, GitLab, Slack tokens
@@ -33,8 +33,10 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 - Database connection strings
 - Private keys (RSA, SSH, PGP)
 - OpenAI, Heroku, NPM, PyPI tokens
+- DigitalOcean, HashiCorp Vault, Terraform Cloud
+- Grafana, Shopify, Anthropic, Docker Hub
 - JWT tokens and signing secrets
-- High-entropy strings (Shannon entropy)
+- High-entropy strings (charset-aware: hex, base64, generic)
 
 </td>
 <td width="50%">
@@ -105,10 +107,10 @@ claude --plugin-dir /path/to/security-audit
         │   Phase 1   │ │ Phase 2  │ │Phase 2b  │ │   Phase 3   │
         │   Setup     │ │ Scan     │ │ File     │ │   Analyze   │
         │             │ │          │ │ Types    │ │             │
-        │ Detect env  │ │ 44 regex │ │ 15 file  │ │ LLM filters │
+        │ Detect env  │ │ 60 regex │ │ 15 file  │ │ LLM filters │
         │ Load config │ │ patterns │ │ patterns │ │ false pos.  │
-        │ Build file  │ │ +entropy │ │ via git  │ │ Classifies  │
-        │ list        │ │detection │ │ ls-files │ │ severity    │
+        │ Build file  │ │ +entropy │ │ via git  │ │ Correlates  │
+        │ list        │ │detection │ │ ls-files │ │ + exec sum  │
         └──────┬──────┘ └────┬─────┘ └────┬─────┘ └──────┬──────┘
                │             │            │               │
                └─────────────┴─────┬──────┴───────────────┘
