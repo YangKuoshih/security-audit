@@ -52,7 +52,6 @@ BINARY_EXTENSIONS = {
 }
 
 # Entropy detection settings
-ENTROPY_THRESHOLD = 4.5       # Shannon entropy threshold (bits per character)
 ENTROPY_MIN_LENGTH = 20       # Minimum string length to evaluate
 ENTROPY_VARIABLE_NAMES = re.compile(
     r"(?i)(key|secret|token|password|passwd|pwd|credential|auth|api[_-]?key|"
@@ -64,6 +63,43 @@ STRING_VALUE_PATTERN = re.compile(
     r"""(?i)(?:key|secret|token|password|passwd|pwd|credential|auth|api[_-]?key)"""
     r"""\s*[:=]\s*['"]([^'"]{20,})['"]"""
 )
+
+# Charset-aware entropy thresholds
+HEX_CHARS = set("0123456789abcdefABCDEF")
+BASE64_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+ENTROPY_THRESHOLDS = {
+    "hex": 3.5,      # max theoretical: 4.0 bits
+    "base64": 4.2,   # max theoretical: ~6.0 bits
+    "generic": 4.5,  # full character set
+}
+
+# False positive filters for entropy detection
+UUID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
+)
+URL_PATH_PATTERN = re.compile(r"^(https?://|/[a-z])", re.I)
+SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+")
+
+
+def detect_charset(value: str) -> str:
+    """Detect the character set of a string value."""
+    chars = set(value)
+    if chars <= HEX_CHARS:
+        return "hex"
+    if chars <= BASE64_CHARS:
+        return "base64"
+    return "generic"
+
+
+def is_false_positive_entropy(value: str) -> bool:
+    """Filter out high-entropy strings that aren't secrets."""
+    if UUID_PATTERN.match(value):
+        return True
+    if URL_PATH_PATTERN.match(value):
+        return True
+    if SEMVER_PATTERN.match(value):
+        return True
+    return False
 
 
 # ─── Shannon Entropy ────────────────────────────────────────────────────────
@@ -296,10 +332,9 @@ def scan_file(
                     "severity": pattern.severity,
                 })
 
-    # Entropy-based detection
+    # Entropy-based detection (charset-aware thresholds)
     if enable_entropy:
         for line_num, line in enumerate(lines, start=1):
-            # Only check lines that look like assignments to secret-like variable names
             if not ENTROPY_VARIABLE_NAMES.search(line):
                 continue
 
@@ -311,14 +346,19 @@ def scan_file(
                 if is_placeholder(value):
                     continue
 
+                if is_false_positive_entropy(value):
+                    continue
+
+                charset = detect_charset(value)
+                threshold = ENTROPY_THRESHOLDS[charset]
                 entropy = shannon_entropy(value)
-                if entropy >= ENTROPY_THRESHOLD:
+                if entropy >= threshold:
                     findings.append({
                         "file": filepath,
                         "line": line_num,
                         "match": redact(value),
                         "pattern_id": "high-entropy",
-                        "pattern_name": f"High-Entropy String (entropy={entropy:.2f})",
+                        "pattern_name": f"High-Entropy String ({charset}, entropy={entropy:.2f})",
                         "severity": "MEDIUM",
                     })
 
