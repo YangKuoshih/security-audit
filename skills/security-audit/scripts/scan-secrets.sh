@@ -165,16 +165,10 @@ else
   find "$TARGET_DIR" -type f 2>/dev/null > "$FILE_LIST"
 fi
 
-# Filter: exclude directories and binary extensions
+# Filter: exclude directories and binary extensions (single pass, no per-file forks)
 FILTERED_LIST=$(mktemp)
 
-while IFS= read -r filepath; do
-  # Skip excluded directories
-  echo "$filepath" | grep -qE "/(${EXCLUDE_DIRS})(/|$)" && continue
-  # Skip binary extensions
-  echo "$filepath" | grep -qiE "$BINARY_EXTENSIONS" && continue
-  echo "$filepath"
-done < "$FILE_LIST" > "$FILTERED_LIST"
+grep -vE "/(${EXCLUDE_DIRS})(/|$)" "$FILE_LIST" | grep -viE "$BINARY_EXTENSIONS" > "$FILTERED_LIST" || true
 
 FILE_COUNT=$(wc -l < "$FILTERED_LIST" | tr -d ' ')
 echo "Files to scan: $FILE_COUNT" >&2
@@ -265,88 +259,71 @@ done
 scan_dangerous_files() {
   local target="$1" output="$2"
 
-  # Only works in a git repo
-  if ! command -v git > /dev/null 2>&1; then
-    return
-  fi
-  if ! git -C "$target" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
-    return
-  fi
+  if ! command -v git > /dev/null 2>&1; then return; fi
+  if ! git -C "$target" rev-parse --is-inside-work-tree > /dev/null 2>&1; then return; fi
 
   local tracked_files
   tracked_files=$(mktemp)
   git -C "$target" ls-files --cached 2>/dev/null > "$tracked_files"
 
-  # Define patterns: glob_pattern|severity|pattern_id|pattern_name
-  local -a DANGEROUS_PATTERNS=(
-    '*.tfstate|HIGH|dangerous-file-tfstate|Terraform State Committed'
-    '*.tfstate.backup|HIGH|dangerous-file-tfstate-backup|Terraform State Backup Committed'
-    '*terraform-apply-output*|MEDIUM|dangerous-file-tf-apply-output|Terraform Apply Output Committed'
-    '*terraform-plan-output*|MEDIUM|dangerous-file-tf-plan-output|Terraform Plan Output Committed'
-    '*.pem|CRITICAL|dangerous-file-pem|Private Key File Committed'
-    '*.key|CRITICAL|dangerous-file-key|Private Key File Committed'
-    '*.p12|CRITICAL|dangerous-file-p12|Certificate Bundle Committed'
-    '*.pfx|CRITICAL|dangerous-file-pfx|Certificate Bundle Committed'
-    '*.jks|HIGH|dangerous-file-jks|Java Keystore Committed'
-    '*.sqlite|MEDIUM|dangerous-file-sqlite|Database File Committed'
-    '*.db|MEDIUM|dangerous-file-db|Database File Committed'
-  )
-
   local count=0
 
-  for entry in "${DANGEROUS_PATTERNS[@]}"; do
-    IFS='|' read -r glob sev pid pname <<< "$entry"
-    while IFS= read -r filepath; do
-      [[ -z "$filepath" ]] && continue
+  # Single pass over tracked files — match by basename and path patterns
+  while IFS= read -r filepath; do
+    [[ -z "$filepath" ]] && continue
+    local base pid pname sev matched=false
+    base=$(basename "$filepath")
+    local lower_base="${base,,}"
+    local lower_path="${filepath,,}"
+
+    # Extension-based patterns (check .tfstate.backup before .tfstate)
+    case "$lower_base" in
+      *.tfstate.backup) pid="dangerous-file-tfstate-backup"; pname="Terraform State Backup Committed"; sev="HIGH"; matched=true ;;
+      *.tfstate)        pid="dangerous-file-tfstate"; pname="Terraform State Committed"; sev="HIGH"; matched=true ;;
+      *.pem)            pid="dangerous-file-pem"; pname="Private Key File Committed"; sev="CRITICAL"; matched=true ;;
+      *.key)            pid="dangerous-file-key"; pname="Private Key File Committed"; sev="CRITICAL"; matched=true ;;
+      *.p12)            pid="dangerous-file-p12"; pname="Certificate Bundle Committed"; sev="CRITICAL"; matched=true ;;
+      *.pfx)            pid="dangerous-file-pfx"; pname="Certificate Bundle Committed"; sev="CRITICAL"; matched=true ;;
+      *.jks)            pid="dangerous-file-jks"; pname="Java Keystore Committed"; sev="HIGH"; matched=true ;;
+      *.sqlite)         pid="dangerous-file-sqlite"; pname="Database File Committed"; sev="MEDIUM"; matched=true ;;
+      *.db)             pid="dangerous-file-db"; pname="Database File Committed"; sev="MEDIUM"; matched=true ;;
+    esac
+
+    # Name-based patterns (only if not already matched)
+    if [[ "$matched" == "false" ]]; then
+      case "$lower_base" in
+        credentials.json)       pid="dangerous-file-credentials-json"; pname="Credentials File Committed"; sev="HIGH"; matched=true ;;
+        service-account*.json)  pid="dangerous-file-service-account"; pname="Service Account Key Committed"; sev="HIGH"; matched=true ;;
+      esac
+    fi
+
+    # Wildcard-name patterns
+    if [[ "$matched" == "false" ]]; then
+      case "$lower_base" in
+        *terraform-apply-output*) pid="dangerous-file-tf-apply-output"; pname="Terraform Apply Output Committed"; sev="MEDIUM"; matched=true ;;
+        *terraform-plan-output*)  pid="dangerous-file-tf-plan-output"; pname="Terraform Plan Output Committed"; sev="MEDIUM"; matched=true ;;
+      esac
+    fi
+
+    # .terraform/ directory
+    if [[ "$matched" == "false" && ("$lower_path" == .terraform/* || "$lower_path" == */.terraform/*) ]]; then
+      pid="dangerous-file-terraform-cache"; pname="Terraform Provider Cache Committed"; sev="MEDIUM"; matched=true
+    fi
+
+    # *secret* in filename (excluding .example, .sample, .template, .md)
+    if [[ "$matched" == "false" && "$lower_base" == *secret* ]]; then
+      case "$lower_base" in
+        *.example|*.sample|*.template|*.md) ;;
+        *) pid="dangerous-file-secret-name"; pname="Possible Secrets File Committed"; sev="MEDIUM"; matched=true ;;
+      esac
+    fi
+
+    if [[ "$matched" == "true" ]]; then
       emit_finding "${target%/}/$filepath" 0 "(entire file)" "$pid" "$pname" "$sev" "$output"
       count=$((count + 1))
       FINDING_COUNT=$((FINDING_COUNT + 1))
-    done < <(grep -i -E "$(echo "$glob" | sed 's/\./\\./g; s/\*/.*/g')$" "$tracked_files" || true)
-  done
-
-  # Special: credentials.json (exact basename match)
-  while IFS= read -r filepath; do
-    [[ -z "$filepath" ]] && continue
-    local base
-    base=$(basename "$filepath")
-    if [[ "$base" == "credentials.json" ]]; then
-      emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-credentials-json" "Credentials File Committed" "HIGH" "$output"
-      count=$((count + 1))
-      FINDING_COUNT=$((FINDING_COUNT + 1))
     fi
   done < "$tracked_files"
-
-  # Special: service-account*.json
-  while IFS= read -r filepath; do
-    [[ -z "$filepath" ]] && continue
-    local base
-    base=$(basename "$filepath")
-    if [[ "$base" == service-account*.json ]]; then
-      emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-service-account" "Service Account Key Committed" "HIGH" "$output"
-      count=$((count + 1))
-      FINDING_COUNT=$((FINDING_COUNT + 1))
-    fi
-  done < "$tracked_files"
-
-  # Special: .terraform/ directory files
-  while IFS= read -r filepath; do
-    [[ -z "$filepath" ]] && continue
-    emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-terraform-cache" "Terraform Provider Cache Committed" "MEDIUM" "$output"
-    count=$((count + 1))
-    FINDING_COUNT=$((FINDING_COUNT + 1))
-  done < <(grep -E '(^|/)\.terraform/' "$tracked_files" || true)
-
-  # Special: *secret* files (excluding .example, .sample, .template, .md)
-  while IFS= read -r filepath; do
-    [[ -z "$filepath" ]] && continue
-    # Skip excluded extensions
-    case "$filepath" in
-      *.example|*.sample|*.template|*.md) continue ;;
-    esac
-    emit_finding "${target%/}/$filepath" 0 "(entire file)" "dangerous-file-secret-name" "Possible Secrets File Committed" "MEDIUM" "$output"
-    count=$((count + 1))
-    FINDING_COUNT=$((FINDING_COUNT + 1))
-  done < <(grep -i 'secret' "$tracked_files" | grep -v -E '\.(example|sample|template|md)$' || true)
 
   rm -f "$tracked_files"
   echo "Dangerous file types found: $count" >&2
