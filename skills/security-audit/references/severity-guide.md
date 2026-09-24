@@ -1,7 +1,8 @@
 # Severity Classification Guide
 
-Rules for classifying and adjusting finding severity. Used by the LLM during Phase 3
-(Analysis) to produce consistent, defensible severity ratings.
+Rules for classifying and adjusting finding severity. The Python scanner applies the
+deterministic subset first; the coding agent validates remaining source-level context
+and documents any evidence-based override.
 
 ---
 
@@ -18,8 +19,10 @@ Rules for classifying and adjusting finding severity. Used by the LLM during Pha
 
 ## Contextual Adjustment Rules
 
-Every finding starts with a **base severity** from the pattern match. The LLM adjusts
-this based on context. Adjustments are documented in the finding's Context field.
+Every finding starts with a **base severity** from the pattern match. The Python
+scanner applies reproducible path and content context, recording the result in the
+finding's `severity`, `confidence`, and `context` fields. An agent may override this
+baseline only when source evidence clearly supports the change.
 
 ### Downgrade Triggers (Reduce Severity by One Tier)
 
@@ -89,7 +92,7 @@ Confidence indicates how certain we are that the finding is a real security issu
 | Confidence | Criteria | Guidance |
 |------------|----------|----------|
 | **High** | Exact match on vendor-specific format with correct structure (prefix, length, character set). Pattern is highly specific with very low false-positive rate. | Report as-is. Typically no manual verification needed. |
-| **Medium** | Generic pattern match that could be a real secret or could be a false positive. Requires context to determine. | Report with note that verification is recommended. The LLM should provide its contextual assessment. |
+| **Medium** | Generic pattern match that could be a real secret or could be a false positive. Requires context to determine. | Report with note that verification is recommended. The coding agent should provide its contextual assessment. |
 | **Low** | Heuristic match based on variable naming, entropy, or proximity to sensitive operations. Significant chance of false positive. | Report with clear caveat. User should verify before taking action. Consider omitting if severity minimum is set. |
 
 ### Confidence by Pattern Type

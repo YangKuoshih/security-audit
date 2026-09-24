@@ -10,15 +10,16 @@ description: >
 license: Apache-2.0
 metadata:
   author: Kuoshih Yang
-  version: "0.2.0"
+  version: "0.3.0"
   repository: https://github.com/YangKuoshih/security-audit
 ---
 
 # Security Audit
 
-Run deterministic local scanning first, then use agent reasoning to remove false
-positives and prioritize remediation. Describe the result as a lightweight
-pattern-based audit, not proof that a repository is secure.
+Run deterministic local scanning and context triage first, then use agent
+reasoning to validate the remaining vulnerability candidates and prioritize
+remediation. Describe the result as a lightweight pattern-based audit, not proof
+that a repository is secure.
 
 The preferred scanner requires Python 3.10+. Bash and grep provide a reduced
 fallback.
@@ -89,13 +90,20 @@ Add only the flags required by scope or configuration:
 - extra excluded directories: `--exclude-dirs dir1,dir2`
 - excluded file/path globs: `--exclude-files '*.min.js,fixtures/**'`
 - severity threshold: `--severity-min low|medium|high|critical`
+- CI policy threshold: `--fail-on none|low|medium|high|critical` (writes results,
+  then exits `3` when a finding meets the threshold)
 - custom pattern file: `--extra-patterns <path>` (repeatable)
 - deterministic-only scan: `--no-entropy`
 - skip tracked dangerous-file checks: `--no-dangerous-files`
 - change the 5 MiB per-file safety limit: `--max-file-bytes <positive integer>`
 
 The Python scanner does not follow symlinks, which prevents a repository from
-causing an audit to read files outside the requested target.
+causing an audit to read files outside the requested target. It also performs
+deterministic context triage before output: documentation/test vulnerability
+heuristics are suppressed, placeholder-like secrets are downgraded, complete PEM
+blocks are required, Firebase client API keys are distinguished from general GCP
+keys, and SSRF requires a user-input signal. Emitted findings include `confidence`
+and `context` fields, including tracked dangerous-file findings.
 
 If Python is unavailable, use the bash scanner. The bash fallback has a smaller
 option surface; apply unsupported filtering during triage and disclose that in
@@ -104,17 +112,19 @@ scan metadata.
 Do not combine scanning with network calls. Capture stderr because it contains
 mode, file count, pattern count, and errors but no raw secret values.
 
-### 3. Triage once
+### 3. Validate the remaining findings once
 
-Read the redacted JSONL once and analyze all findings in one pass.
+Read the redacted JSONL once and analyze all findings in one pass. Treat scanner
+severity and confidence as the deterministic baseline; change them only when the
+source evidence below clearly justifies the change.
 
-1. Remove clear placeholders and findings in fixtures/examples/docs when the
-   path and redacted evidence make the intent unambiguous. Do not suppress a
-   vendor-shaped credential only because it is in a test path.
+1. Verify remaining broad vulnerability heuristics by checking whether untrusted
+   input reaches the sink. Do not open files that also contain secret findings.
 2. Correlate related findings. The report generator removes common weaker
    duplicates (for example, entropy plus a vendor-specific token on one line),
    but preserve genuinely different risks at the same location.
-3. Adjust severity by at most one tier from the scanner's base severity unless
+3. During agent review, adjust severity by at most one tier from the scanner's
+   contextual severity unless
    there is strong evidence:
    - downgrade for unmistakable placeholders or development-only context;
    - upgrade for production/deployment paths or broad production access;
@@ -169,6 +179,7 @@ Apply it without editing the installed skill:
 - `exclude.directories` -> `--exclude-dirs`.
 - `exclude.files` plus `exclude.patterns` -> `--exclude-files`.
 - `severity.minimum` -> `--severity-min`.
+- `ci.fail_on` -> `--fail-on`.
 - `output.format` and `output.file` -> report-generator arguments.
 - `custom_patterns.secrets` -> write a private temporary tab-delimited pattern
   file (`SEVERITY<TAB>ID<TAB>NAME<TAB>REGEX`) and pass `--extra-patterns`.

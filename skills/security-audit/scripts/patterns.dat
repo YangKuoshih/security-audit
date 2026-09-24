@@ -37,12 +37,12 @@ MEDIUM	sql-injection-concat	SQL Injection (String Concat)	(execute|query|raw|cur
 MEDIUM	sql-injection-build	SQL Injection (String Build)	(SELECT|INSERT|UPDATE|DELETE|DROP)\s+.{0,40}['"]\s*\+\s*[a-zA-Z]
 MEDIUM	xss-innerhtml	XSS (innerHTML/document.write)	(innerHTML|outerHTML|document\.write|document\.writeln)\s*[=(]
 MEDIUM	xss-react-dangerous	XSS (dangerouslySetInnerHTML)	dangerouslySetInnerHTML\s*=
-MEDIUM	insecure-deserialize	Insecure Deserialization	(pickle\.loads?|yaml\.load\s*\(|yaml\.unsafe_load|unserialize\s*\(|Marshal\.load|eval\s*\()
+MEDIUM	insecure-deserialize	Insecure Deserialization	(pickle\.loads?|yaml\.load\s*\(|yaml\.unsafe_load|unserialize\s*\(|Marshal\.load|\beval\s*\()
 MEDIUM	weak-crypto	Weak Cryptographic Algorithm	(MD5|SHA1|md5|sha1|DES|RC4|RC2)\s*[(.]
 MEDIUM	hardcoded-ip	Hardcoded IP in Config	(host|server|endpoint|address)\s*[:=]\s*['"]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}['"]
 MEDIUM	insecure-http	Insecure HTTP URL (Non-Local)	(url|endpoint|host|api|server|webhook)\s*[:=]\s*['"]http://[^'"]*['"]
 MEDIUM	command-injection	Command Injection	(exec|system|popen|subprocess\.call|subprocess\.run|child_process\.exec|os\.system|shell_exec)\s*\([^)]*(\+\s*[a-zA-Z]|\$\{|f['"])
-MEDIUM	ssrf-dynamic-url	SSRF (Dynamic URL)	(requests\.get|requests\.post|fetch|urllib|axios\.(get|post)|curl_exec)\s*\([^)]*(\+\s*[a-zA-Z]|\$\{|f['"])
+MEDIUM	ssrf-dynamic-url	SSRF (User-Controlled URL)	(requests\.(get|post)|fetch|urllib\.request\.urlopen|axios\.(get|post)|curl_exec)\s*\([^)]*(req\.(query|params|body)|request\.(args|form|json|values)|event\.queryStringParameters|location\.(search|hash)|user[_A-Z]?[a-zA-Z_]*url|input[_A-Z]?[a-zA-Z_]*url|target[_A-Z]?[a-zA-Z_]*url|callback[_A-Z]?[a-zA-Z_]*url|webhook[_A-Z]?[a-zA-Z_]*url)
 LOW	debug-enabled	Debug Mode Enabled	(debug|DEBUG)\s*[:=]\s*(true|True|1|['"]true['"])
 LOW	cors-wildcard	Permissive CORS (Wildcard)	(Access-Control-Allow-Origin|cors.*origin)\s*[:=]\s*['"]?\*['"]?
 LOW	ssl-verify-disabled	Disabled SSL/TLS Verification	(verify\s*[:=]\s*False|CURLOPT_SSL_VERIFYPEER\s*[:=]\s*(false|0)|rejectUnauthorized\s*[:=]\s*false|InsecureSkipVerify\s*[:=]\s*true)

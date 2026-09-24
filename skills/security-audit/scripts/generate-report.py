@@ -16,13 +16,14 @@ Arguments:
 
 import hashlib
 import json
+import os
 import sys
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
 TOOL_NAME = "security-audit"
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
 
 SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
 SEVERITY_PREFIX = {"CRITICAL": "C", "HIGH": "H", "MEDIUM": "M", "LOW": "L"}
@@ -172,7 +173,7 @@ def generate_markdown(findings: list[dict]) -> str:
             match = finding.get("match", "****")
             pattern_id = finding.get("pattern_id", "unknown")
 
-            # Optional fields added by the LLM during Phase 3 analysis
+            # Context fields supplied by deterministic triage or agent review.
             confidence = finding.get("confidence")
             context = finding.get("context")
             commit = finding.get("commit")
@@ -189,7 +190,7 @@ def generate_markdown(findings: list[dict]) -> str:
             if context:
                 lines.append(f"- **Context:** {context}")
 
-            # Remediation: prefer LLM-generated (via context field) then fall back to built-in
+            # Use the built-in remediation selected for this contextualized finding.
             remediation = get_remediation(pattern_id, sev)
             if remediation:
                 lines.append(f"- **Remediation:** {remediation}")
@@ -225,15 +226,16 @@ def generate_sarif(findings: list[dict]) -> dict:
     rules_map: dict[str, dict] = {}
     for finding in findings:
         pid = finding.get("pattern_id", "unknown")
-        if pid not in rules_map:
-            sev = finding.get("severity", "MEDIUM").upper()
+        sev = finding.get("severity", "MEDIUM").upper()
+        rule_id = f"{pid}/{sev.lower()}"
+        if rule_id not in rules_map:
             pname = finding.get("pattern_name", pid)
             remediation = get_remediation(pid, sev)
 
             help_text = f"Pattern: {pid}. {remediation}" if remediation else f"Pattern: {pid}"
 
-            rules_map[pid] = {
-                "id": pid,
+            rules_map[rule_id] = {
+                "id": rule_id,
                 "shortDescription": {"text": pname},
                 "fullDescription": {"text": f"{pname} ({sev.lower()} severity)"},
                 "help": {
@@ -262,16 +264,17 @@ def generate_sarif(findings: list[dict]) -> dict:
         match = finding.get("match", "****")
         pname = finding.get("pattern_name", pid)
         sev = finding.get("severity", "MEDIUM").upper()
+        rule_id = f"{pid}/{sev.lower()}"
 
-        # Optional LLM-augmented fields
+        # Context fields supplied by deterministic triage or agent review.
         confidence = finding.get("confidence")
         context = finding.get("context")
 
         # Generate a stable partial fingerprint for deduplication
-        fingerprint_source = f"{filepath}:{pid}:{match}"
+        fingerprint_source = f"{filepath}:{line_num}:{pid}:{match}"
         fingerprint = hashlib.sha256(fingerprint_source.encode()).hexdigest()[:16]
 
-        # Build message text: include LLM context if available
+        # Include contextual assessment when available.
         base_msg = f"{pname}: {match} in {filepath}:{line_num}"
         message_text = f"{base_msg} — {context}" if context else base_msg
 
@@ -279,8 +282,8 @@ def generate_sarif(findings: list[dict]) -> dict:
         confidence_to_precision = {"High": "high", "Medium": "medium", "Low": "low"}
 
         result = {
-            "ruleId": pid,
-            "ruleIndex": rule_index.get(pid, 0),
+            "ruleId": rule_id,
+            "ruleIndex": rule_index.get(rule_id, 0),
             "level": SARIF_LEVEL.get(sev, "warning"),
             "message": {
                 "text": message_text,
@@ -303,7 +306,7 @@ def generate_sarif(findings: list[dict]) -> dict:
             },
         }
 
-        # Add per-result precision override when LLM has assessed confidence
+        # Add a per-result precision override when confidence is available.
         if confidence and confidence in confidence_to_precision:
             result["properties"] = {"precision": confidence_to_precision[confidence]}
 
@@ -337,7 +340,7 @@ def generate_json(findings: list[dict]) -> dict:
     grouped = group_by_severity(findings)
     now = datetime.now(timezone.utc).isoformat()
 
-    # findings already contain any LLM-augmented fields (confidence, context, commit)
+    # Findings may contain contextual fields (confidence, context, commit).
     return {
         "tool": TOOL_NAME,
         "version": TOOL_VERSION,
@@ -357,6 +360,14 @@ def generate_json(findings: list[dict]) -> dict:
 
 def get_remediation(pattern_id: str, severity: str) -> str:
     """Return remediation guidance based on pattern type."""
+    if pattern_id == "gcp-api-key" and severity.upper() == "LOW":
+        return (
+            "For a Firebase client API key, keep the key only in the expected client "
+            "configuration, restrict it to Firebase-related APIs and the intended app, "
+            "and enforce Firebase Security Rules and App Check. Do not treat the key "
+            "itself as an authorization secret."
+        )
+
     remediations = {
         # Critical
         "aws-access-key": "Remove the key from source code. Use environment variables or AWS Secrets Manager. Rotate the key immediately via the AWS IAM console.",
@@ -487,7 +498,11 @@ def main() -> None:
     if output_file in ("-", "/dev/stdout"):
         sys.stdout.write(content + "\n")
     else:
-        Path(output_file).write_text(content + "\n", encoding="utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(output_file, flags, 0o600)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as report:
+            report.write(content + "\n")
         print(f"Report written to {output_file}", file=sys.stderr)
 
 

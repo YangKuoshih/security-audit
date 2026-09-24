@@ -17,7 +17,7 @@
 
 Every leaked secret starts the same way — a key hardcoded "just for testing" that makes it to production. Existing tools catch some of these, but they're standalone binaries that don't understand your code's context.
 
-**security-audit** combines deterministic pattern scanning with LLM-powered reasoning. The scanner finds candidates fast. The AI filters false positives, understands context, and writes remediation steps tailored to your stack.
+**security-audit** combines deterministic pattern scanning and context-aware triage with agent reasoning. The scanner removes common noise consistently; the coding agent validates the remaining source-level risks and explains what to fix.
 
 ## What It Catches
 
@@ -25,7 +25,7 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 <tr>
 <td width="50%">
 
-**Secrets** — 50 patterns validated against [GitLeaks](https://github.com/gitleaks/gitleaks)
+**Secrets** — vendor signatures and high-signal heuristics informed by [GitLeaks](https://github.com/gitleaks/gitleaks)
 
 - AWS, GCP, Azure credentials
 - GitHub, GitLab, Slack tokens
@@ -41,7 +41,7 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 </td>
 <td width="50%">
 
-**Vulnerabilities** — 15 patterns mapped to [OWASP Top 10](https://owasp.org/Top10/)
+**Vulnerabilities** — 14 patterns mapped to [OWASP Top 10](https://owasp.org/Top10/)
 
 - SQL injection sinks
 - XSS vectors (innerHTML, dangerouslySetInnerHTML)
@@ -94,6 +94,19 @@ claude --plugin-dir /path/to/security-audit
 /security-audit --path src/        # target specific directory
 ```
 
+For CI, the Python scanner can enforce a policy after safely writing its output:
+
+```bash
+python3 skills/security-audit/scripts/scan-secrets.py \
+  --target . \
+  --patterns skills/security-audit/scripts/patterns.dat \
+  --output security-findings.jsonl \
+  --fail-on high
+```
+
+Exit code `3` means the configured finding threshold was met; scanner/configuration
+errors use a different non-zero exit code.
+
 ## How It Works
 
 ```
@@ -107,8 +120,8 @@ claude --plugin-dir /path/to/security-audit
         │   Phase 1   │ │ Phase 2  │ │Phase 2b  │ │   Phase 3   │
         │   Setup     │ │ Scan     │ │ File     │ │   Analyze   │
         │             │ │          │ │ Types    │ │             │
-        │ Detect env  │ │ 60 regex │ │ 15 file  │ │ LLM filters │
-        │ Load config │ │ patterns │ │ patterns │ │ false pos.  │
+        │ Detect env  │ │ 60 regex │ │ 15 file  │ │Agent review │
+        │ Load config │ │ + context│ │ patterns │ │of remaining │
         │ Build file  │ │ +entropy │ │ via git  │ │ Correlates  │
         │ list        │ │detection │ │ ls-files │ │ + exec sum  │
         └──────┬──────┘ └────┬─────┘ └────┬─────┘ └──────┬──────┘
@@ -124,11 +137,11 @@ claude --plugin-dir /path/to/security-audit
                         └─────────────────────┘
 ```
 
-**Shell available?** Runs `scan-secrets.py` (Python, preferred — fast + entropy detection) or `scan-secrets.sh` (bash/grep fallback) for deterministic scanning, including dangerous file type detection via `git ls-files`. The LLM then analyzes redacted results.
+**Shell available?** Runs `scan-secrets.py` (Python, preferred for production) or `scan-secrets.sh` (reduced bash/grep fallback). The Python scanner applies deterministic context rules, entropy detection, complete-PEM validation, user-controlled SSRF checks, and dangerous-file detection via `git ls-files`. The agent then validates only the remaining redacted candidates.
 
-**No shell?** The LLM reads files directly using the pattern knowledge from `references/` — slower but works on sandboxed platforms. Dangerous file types are flagged without reading their contents.
+**No shell?** The coding agent reads files directly using the pattern knowledge from `references/` — slower but works on sandboxed platforms. Dangerous file types are flagged without reading their contents.
 
-**Secret safety:** Discovered secrets are never passed to the LLM or any third party. Scanner output is redacted before the LLM sees it. The report is a local file — you decide what to do with it.
+**Secret safety:** Discovered secrets are never passed to the coding agent or any third party. Scanner output is redacted before agent review. The report is a local file — you decide what to do with it.
 
 ## Report Output
 
@@ -175,7 +188,7 @@ Summary: 3 Critical, 4 High, 8 Medium, 3 Low
 | **Medium** | Needs verification, or confirmed vuln pattern. | 1-2 weeks | SQL injection sinks, high-entropy strings, XSS |
 | **Low** | Best practice violation. No direct exploit. | Next cycle | Debug mode, permissive CORS, disabled SSL verify |
 
-The LLM adjusts severity based on context — findings in test files get downgraded, findings in deployment scripts get upgraded. See [`references/severity-guide.md`](skills/security-audit/references/severity-guide.md) for the full ruleset.
+The Python scanner assigns reproducible contextual severity and confidence before agent review. It downgrades likely test placeholders, suppresses documentation-only vulnerability heuristics, and treats standard Firebase client keys as Low while leaving non-Firebase Google API keys Critical. See [`references/severity-guide.md`](skills/security-audit/references/severity-guide.md) for the full ruleset.
 
 ## Configuration
 
@@ -193,6 +206,9 @@ exclude:
 
 severity:
   minimum: medium               # skip Low findings
+
+ci:
+  fail_on: high                 # exit 3 after writing results
 
 output:
   format: markdown              # markdown | sarif | json
@@ -221,7 +237,7 @@ security-audit/
 │       ├── agents/openai.yaml          # Codex UI metadata and invocation policy
 │       ├── references/
 │       │   ├── secret-patterns.md      # Secret and dangerous-file guidance
-│       │   ├── vulnerability-patterns.md   # 15 patterns (OWASP Top 10)
+│       │   ├── vulnerability-patterns.md   # 14 patterns (OWASP Top 10)
 │       │   └── severity-guide.md       # Classification rules + adjustments
 │       ├── scripts/
 │       │   ├── scan-secrets.sh         # Bash scanner (grep, PCRE/ERE)
@@ -234,7 +250,7 @@ security-audit/
 │           └── security-audit.yml      # Example configuration
 ├── tests/
 │   ├── test-e2e.sh                     # Portable test runner
-│   ├── test_e2e.py                     # 10 end-to-end regression tests
+│   ├── test_e2e.py                     # 24 end-to-end regression tests
 │   └── fixtures/sample-repo/           # Test files with known secrets/vulns
 ├── docs/plans/                         # Design documents
 ├── LICENSE                             # Apache 2.0
@@ -251,8 +267,9 @@ bash tests/test-e2e.sh
 ```
 
 Current coverage includes Python and bash scanning, secret redaction, file exclusions,
-severity thresholds, strict incremental failures, incremental dangerous-file scope,
-deduplication, clean-report caveats, JSON, Markdown, and SARIF output.
+severity and CI thresholds, strict incremental failures, dangerous-file scope,
+contextual Firebase handling, complete PEM validation, SSRF user-input gating,
+weak-crypto filtering, deduplication, report permissions, and JSON/Markdown/SARIF output.
 
 ## Design
 

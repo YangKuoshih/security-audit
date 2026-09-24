@@ -51,6 +51,13 @@ severity:
   # Options: critical, high, medium, low (default: low — report everything)
   minimum: low
 
+# ─── CI Policy ──────────────────────────────────────────────────────────────
+
+ci:
+  # Write the report, then exit 3 when a finding at or above this level exists.
+  # Options: none, critical, high, medium, low (default: none)
+  fail_on: high
+
 # ─── Output ─────────────────────────────────────────────────────────────────
 
 output:
@@ -75,14 +82,11 @@ custom_patterns:
   #     regex: "svc_key_[a-zA-Z0-9]{40}"
   #     severity: high
 
-  # Suppress known false positives
-  # Each entry can match by file path or by pattern in the matched value
+  # Suppress known false positives by file path. Raw-value allowlists are not
+  # supported because they would expose secret values outside the scanner.
   allowlist: []
   #   - file: "docs/api-examples.md"
   #     reason: "Documentation examples with placeholder keys"
   #
   #   - file: "tests/fixtures/**"
   #     reason: "Test fixtures with intentionally fake secrets"
-  #
-  #   - pattern: "EXAMPLE_KEY_.*"
-  #     reason: "Convention for placeholder keys in this project"

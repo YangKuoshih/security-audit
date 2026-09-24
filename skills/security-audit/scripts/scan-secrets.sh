@@ -226,7 +226,7 @@ if [[ "$OUTPUT_FILE" != "/dev/stdout" && "$OUTPUT_FILE" != "-" ]]; then
   > "$OUTPUT_FILE"
 fi
 
-echo "security-audit scanner v0.2.0" >&2
+echo "security-audit scanner v0.3.0" >&2
 echo "Target: $TARGET_DIR" >&2
 echo "Grep mode: $GREP_MODE" >&2
 

@@ -2,8 +2,9 @@
 """
 scan-secrets.py — Pattern-based secret and vulnerability scanner
 
-Part of the security-audit skill. This is the preferred scanner; it includes
-entropy detection and the full filtering option set.
+Part of the security-audit skill. This is the preferred production scanner; it
+includes deterministic context triage, entropy detection, dangerous-file checks,
+and the full filtering and CI option set.
 
 Usage:
     python3 scan-secrets.py --target <dir> --patterns <file> --output <file> [options]
@@ -14,6 +15,9 @@ Options:
     --output <file>        Output file path (use - for stdout)
     --base-branch <branch> Incremental mode: only scan files changed vs branch
     --exclude-dirs <dirs>  Comma-separated extra directories to exclude
+    --exclude-files <globs> Comma-separated path globs to exclude
+    --severity-min <level> Minimum severity to emit
+    --fail-on <level>      Exit 3 after writing output if threshold is met
     --entropy              Enable high-entropy string detection (default: on)
     --no-entropy           Disable high-entropy string detection
 
@@ -33,9 +37,47 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
 SEVERITY_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024
+
+VULNERABILITY_PATTERN_IDS = {
+    "sql-injection-concat", "sql-injection-build", "xss-innerhtml",
+    "xss-react-dangerous", "insecure-deserialize", "weak-crypto",
+    "hardcoded-ip", "insecure-http", "command-injection", "ssrf-dynamic-url",
+    "debug-enabled", "cors-wildcard", "ssl-verify-disabled", "security-todo",
+}
+
+HEURISTIC_SECRET_IDS = {
+    "password-assignment", "jwt-signing-secret", "generic-api-key",
+    "generic-secret", "base64-secret", "private-key-var", "encryption-key",
+    "high-entropy", "datadog-api-key", "discord-bot-token",
+}
+
+HIGH_CONFIDENCE_SECRET_IDS = {
+    "aws-access-key", "gcp-service-account", "gcp-api-key", "stripe-secret-key",
+    "azure-storage-key", "azure-ad-secret", "db-root-password",
+    "github-pat-classic", "github-pat-fine", "github-oauth", "gitlab-pat",
+    "gitlab-runner", "slack-bot-token", "slack-webhook", "sendgrid-key",
+    "twilio-key", "db-connection-string", "heroku-key", "mailgun-key",
+    "npm-token", "rubygems-token", "openai-key", "digitalocean-pat",
+    "hashicorp-vault-token", "terraform-cloud-token", "docker-hub-pat",
+    "grafana-cloud-token", "grafana-service-account", "shopify-private-app",
+    "shopify-access-token", "shopify-shared-secret", "anthropic-api-key",
+    "linear-api-key", "planetscale-token", "figma-pat", "digitalocean-oauth",
+}
+
+PEM_BLOCK_PATTERN = re.compile(
+    r"-----BEGIN (?P<label>[A-Z0-9 ]*PRIVATE KEY)-----\s+"
+    r"(?P<body>[A-Za-z0-9+/=\r\n]{64,})"
+    r"-----END (?P=label)-----",
+    re.MULTILINE,
+)
+
+SECURITY_CRYPTO_CONTEXT = re.compile(
+    r"(?i)(password|passwd|credential|secret|token|auth|signature|signing|"
+    r"certificate|encrypt|decrypt|cipher|hmac|session|jwt)",
+)
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -386,6 +428,123 @@ def redact(match: str) -> str:
         return f"{match[:4]}...{match[-4:]}"
 
 
+def path_context(filepath: str) -> tuple[bool, bool, bool]:
+    """Return (documentation, test, generated) flags for a path."""
+    path = Path(filepath)
+    lowered_parts = [part.lower() for part in path.parts]
+    name = path.name.lower()
+    suffix = path.suffix.lower()
+
+    documentation = (
+        suffix in {".md", ".rst", ".adoc"}
+        or any(part in {"docs", "doc", "documentation", "examples", "example", "tutorials"}
+               for part in lowered_parts)
+    )
+    test = (
+        any(part in {"test", "tests", "spec", "specs", "fixtures", "__tests__", "__mocks__"}
+            for part in lowered_parts)
+        or any(marker in name for marker in (".test.", ".spec.", "_test.", "test_"))
+        or name.startswith(("test-", "test."))
+    )
+    generated = (
+        suffix == ".log"
+        or any(part in {"generated", "coverage", ".terraform"} for part in lowered_parts)
+        or any("backup" in part for part in lowered_parts)
+    )
+    return documentation, test, generated
+
+
+def is_firebase_client_context(filepath: str, file_text: str, line: str) -> bool:
+    """Recognize standard Firebase client configuration locations."""
+    name = Path(filepath).name.lower()
+    if name in {"google-services.json", "googleservice-info.plist"}:
+        return True
+    if "firebase" in name and ("key" in name or "config" in name):
+        return True
+    lowered_line = line.lower()
+    lowered_text = file_text.lower()
+    line_is_firebase_key = "firebase" in lowered_line and bool(
+        re.search(r"api[_-]?key|apikey", lowered_line)
+    )
+    file_has_client_config = (
+        ("firebaseconfig" in lowered_text or "initializeapp" in lowered_text)
+        and bool(re.search(r"\bapi[_-]?key\b|\bapikey\b", lowered_line))
+    )
+    return line_is_firebase_key or file_has_client_config
+
+
+def contextualize_finding(
+    filepath: str,
+    file_text: str,
+    line: str,
+    pattern: Pattern,
+    matched_text: str,
+) -> dict | None:
+    """Apply deterministic, evidence-based triage before emitting a finding."""
+    pattern_id = pattern.pattern_id
+    documentation, test, generated = path_context(filepath)
+
+    # A header string is common in key-parsing code. Complete PEM blocks are
+    # detected separately across the full file.
+    if pattern_id == "private-key-block":
+        return None
+
+    # Vulnerability regexes are code heuristics. Matches in prose, fixtures,
+    # tests, generated output, and logs are not actionable production findings.
+    if pattern_id in VULNERABILITY_PATTERN_IDS and (documentation or test or generated):
+        return None
+
+    if pattern_id == "gcp-api-key" and is_firebase_client_context(filepath, file_text, line):
+        return {
+            "severity": "LOW",
+            "confidence": "High",
+            "context": (
+                "Firebase client configuration key; public by design, but verify "
+                "Firebase-only API restrictions, Security Rules, and App Check."
+            ),
+        }
+
+    if pattern_id == "weak-crypto":
+        algorithm = matched_text.upper()
+        if algorithm.startswith(("MD5", "SHA1")) and not SECURITY_CRYPTO_CONTEXT.search(line):
+            return None
+        return {
+            "severity": pattern.severity,
+            "confidence": "Medium",
+            "context": "Weak algorithm used in security-sensitive context; verify the data flow.",
+        }
+
+    if pattern_id in HEURISTIC_SECRET_IDS and (documentation or test or generated):
+        if is_placeholder(matched_text):
+            return None
+        return {
+            "severity": "LOW",
+            "confidence": "Low",
+            "context": "Secret-like value appears in a non-production path; verify it is synthetic.",
+        }
+
+    if pattern_id in VULNERABILITY_PATTERN_IDS:
+        return {
+            "severity": pattern.severity,
+            "confidence": "Medium",
+            "context": "Potential security sink in production code; confirm untrusted input reachability.",
+        }
+
+    if pattern_id in HIGH_CONFIDENCE_SECRET_IDS:
+        severity = pattern.severity
+        context = "Vendor-specific credential format in source; verify and rotate if active."
+        if documentation or test or generated:
+            severity = {"CRITICAL": "HIGH", "HIGH": "MEDIUM"}.get(severity, severity)
+            context = "Vendor-specific credential format in a non-production path; verify it is synthetic."
+        return {"severity": severity, "confidence": "High", "context": context}
+
+    return {
+        "severity": pattern.severity,
+        "confidence": "Low" if pattern_id in HEURISTIC_SECRET_IDS else "Medium",
+        "context": "Pattern match requires contextual verification.",
+    }
+
+
 # ─── Scanning ──────────────────────────────────────────────────────────────
 
 def scan_file(
@@ -407,26 +566,38 @@ def scan_file(
     except (OSError, PermissionError):
         return findings
 
+    file_text = "".join(lines)
+
     for line_num, line in enumerate(lines, start=1):
         # Skip blank / whitespace-only lines early
         if not line.strip():
             continue
 
         # Pattern-based scanning — all patterns tested on this line
+        matched_pattern_ids: set[str] = set()
         for pattern in patterns:
             match = pattern.compiled.search(line)
             if match:
+                triage = contextualize_finding(
+                    filepath, file_text, line, pattern, match.group(0),
+                )
+                if triage is None:
+                    continue
+                matched_pattern_ids.add(pattern.pattern_id)
                 findings.append({
                     "file": filepath,
                     "line": line_num,
                     "match": redact(match.group(0)),
                     "pattern_id": pattern.pattern_id,
                     "pattern_name": pattern.name,
-                    "severity": pattern.severity,
+                    **triage,
                 })
 
         # Entropy-based detection (same pass, no second file read)
-        if enable_entropy and ENTROPY_VARIABLE_NAMES.search(line):
+        specific_secret_found = any(
+            pattern_id in HIGH_CONFIDENCE_SECRET_IDS for pattern_id in matched_pattern_ids
+        )
+        if enable_entropy and not specific_secret_found and ENTROPY_VARIABLE_NAMES.search(line):
             for m in STRING_VALUE_PATTERN.finditer(line):
                 value = m.group(1)
                 if len(value) < ENTROPY_MIN_LENGTH:
@@ -440,14 +611,30 @@ def scan_file(
                 threshold = ENTROPY_THRESHOLDS[charset]
                 entropy = shannon_entropy(value)
                 if entropy >= threshold:
+                    documentation, test, generated = path_context(filepath)
                     findings.append({
                         "file": filepath,
                         "line": line_num,
                         "match": redact(value),
                         "pattern_id": "high-entropy",
                         "pattern_name": f"High-Entropy String ({charset}, entropy={entropy:.2f})",
-                        "severity": "MEDIUM",
+                        "severity": "LOW" if (documentation or test or generated) else "MEDIUM",
+                        "confidence": "Low",
+                        "context": "High-entropy value in a secret-like assignment; verify manually.",
                     })
+
+    for match in PEM_BLOCK_PATTERN.finditer(file_text):
+        line_num = file_text.count("\n", 0, match.start()) + 1
+        findings.append({
+            "file": filepath,
+            "line": line_num,
+            "match": "-----BEGIN ... PRIVATE KEY-----",
+            "pattern_id": "private-key-block",
+            "pattern_name": "Private Key (Complete PEM Block)",
+            "severity": "CRITICAL",
+            "confidence": "High",
+            "context": "Complete PEM private-key block committed in source.",
+        })
 
     return findings
 
@@ -520,6 +707,7 @@ def scan_dangerous_files(target: str, allowed_files: set[str] | None = None) -> 
     }
 
     def _emit(filepath: str, pid: str, pname: str, sev: str) -> None:
+        confidence = "High" if sev in {"CRITICAL", "HIGH"} else "Medium"
         findings.append({
             "file": str(target_path / filepath),
             "line": 0,
@@ -527,6 +715,8 @@ def scan_dangerous_files(target: str, allowed_files: set[str] | None = None) -> 
             "pattern_id": pid,
             "pattern_name": pname,
             "severity": sev,
+            "confidence": confidence,
+            "context": "Security-sensitive file is tracked by git; verify whether it contains live data.",
         })
 
     for filepath in tracked_files:
@@ -591,9 +781,13 @@ def write_findings(
     target: str,
 ) -> None:
     """Write findings as JSON Lines."""
-    out = sys.stdout if output_path in ("-", "/dev/stdout") else open(output_path, "w", encoding="utf-8")
-    if out is not sys.stdout:
-        os.chmod(output_path, 0o600)
+    if output_path in ("-", "/dev/stdout"):
+        out = sys.stdout
+    else:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(output_path, flags, 0o600)
+        os.fchmod(fd, 0o600)
+        out = os.fdopen(fd, "w", encoding="utf-8")
 
     try:
         for finding in findings:
@@ -623,6 +817,9 @@ def main() -> None:
     parser.add_argument("--severity-min", default="low",
                         choices=("low", "medium", "high", "critical"),
                         help="Minimum severity to emit (default: low)")
+    parser.add_argument("--fail-on", default="none",
+                        choices=("none", "low", "medium", "high", "critical"),
+                        help="Exit 3 after writing output when a finding meets this severity")
     parser.add_argument("--no-dangerous-files", action="store_true",
                         help="Disable tracked dangerous-file detection")
     parser.add_argument("--max-file-bytes", type=int, default=DEFAULT_MAX_FILE_BYTES,
@@ -719,6 +916,16 @@ def main() -> None:
         f"{severity_counts['MEDIUM']} Medium, {severity_counts['LOW']} Low)",
         file=sys.stderr,
     )
+
+    if args.fail_on != "none":
+        fail_rank = SEVERITY_RANK[args.fail_on.upper()]
+        if any(SEVERITY_RANK.get(finding["severity"].upper(), 1) >= fail_rank
+               for finding in all_findings):
+            print(
+                f"CI severity gate failed: findings at or above {args.fail_on.upper()}",
+                file=sys.stderr,
+            )
+            sys.exit(3)
 
 
 if __name__ == "__main__":

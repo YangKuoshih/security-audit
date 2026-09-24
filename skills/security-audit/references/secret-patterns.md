@@ -2,9 +2,10 @@
 
 Regex patterns for detecting hardcoded secrets in source code. Organized by base severity.
 
-Patterns are validated against [GitLeaks](https://github.com/gitleaks/gitleaks) and
-[GitHub Secret Scanning](https://docs.github.com/en/code-security/secret-scanning) to
-ensure accuracy. Where our patterns diverge, the rationale is documented.
+Vendor-specific signatures are informed by [GitLeaks](https://github.com/gitleaks/gitleaks)
+and [GitHub Secret Scanning](https://docs.github.com/en/code-security/secret-scanning).
+Broad assignment and entropy rules are explicitly treated as heuristics and require
+contextual triage.
 
 Each pattern includes:
 - **Name**: human-readable identifier (maps to pattern ID in reports)
@@ -40,8 +41,8 @@ Credentials that grant broad or production-level access. Immediate remediation r
 ### GCP API Key
 
 - **Regex**: `\b(AIza[\w-]{35})\b`
-- **Description**: Google API keys follow the `AIza` prefix with 35 alphanumeric/dash/underscore characters. Severity depends on key restrictions — unrestricted keys are critical, restricted keys may be lower.
-- **Source**: GitLeaks `gcp-api-key`.
+- **Description**: Google API keys follow the `AIza` prefix with 35 alphanumeric/dash/underscore characters. Outside a recognized Firebase client configuration they remain Critical because restrictions cannot be verified locally. In standard Firebase client files or content containing Firebase markers, the Python scanner reports them as Low: Firebase documents that these keys identify a project and are not authorization secrets. Still restrict each key to the required APIs and application, use Firebase Security Rules and App Check, and never confuse the client key with a service-account credential.
+- **Source**: GitLeaks `gcp-api-key`; [Firebase API key guidance](https://firebase.google.com/docs/projects/api-keys).
 
 ### Stripe Secret Key
 
@@ -65,7 +66,7 @@ Credentials that grant broad or production-level access. Immediate remediation r
 
 - **Regex**: `(?i)(root|admin)(.{0,20})password\s*[:=]\s*['\"][^'\"]{8,}['\"]`
 - **Description**: Hardcoded root or admin database password in assignments or configuration. The 8-char minimum avoids flagging empty or trivially short placeholders.
-- **Source**: Custom pattern. Contextual — the LLM should verify this isn't a placeholder or documentation example.
+- **Source**: Custom pattern. Contextual — the coding agent should verify this isn't a placeholder or documentation example.
 
 ---
 
@@ -137,13 +138,13 @@ Scoped credentials or tokens. Exploitation requires some additional context.
 
 - **Regex**: `(?i)(mongodb(\+srv)?|postgres(ql)?|mysql|redis|mssql|mariadb):\/\/[^\s'\"]{10,}`
 - **Description**: Database connection URI likely containing embedded credentials (user:pass@host format). Severity depends on whether credentials are present in the string.
-- **Source**: Custom pattern. The LLM should verify credentials are actually embedded (look for `user:pass@` format) vs credential-less URIs.
+- **Source**: Custom pattern. The coding agent should verify credentials are actually embedded (look for `user:pass@` format) vs credential-less URIs.
 
 ### Generic Password Assignment
 
 - **Regex**: `(?i)(password|passwd|pwd)\s*[:=]\s*['\"][^'\"]{8,}['\"]`
 - **Description**: Hardcoded password in an assignment or configuration. The 8-char minimum filters out empty or trivially short values.
-- **Source**: Custom pattern. High false-positive rate — the LLM should verify context (test file? placeholder?).
+- **Source**: Custom pattern. High false-positive rate — the coding agent should verify context (test file? placeholder?).
 
 ### Heroku API Key
 
@@ -185,7 +186,7 @@ Scoped credentials or tokens. Exploitation requires some additional context.
 
 - **Regex**: `\b(ey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9\/\\_-]{17,}\.(?:[a-zA-Z0-9\/\\_-]{10,}={0,2})?)\b`
 - **Description**: Actual JWT token value (base64url-encoded header.payload.signature). Detects hardcoded tokens, not variable names. The `ey` prefix is the base64url encoding of `{"` which all JWT headers start with.
-- **Source**: GitLeaks `jwt`. Note: this detects token values, not signing secrets. The LLM should assess if the token is expired, a test token, or contains sensitive claims.
+- **Source**: GitLeaks `jwt`. Note: this detects token values, not signing secrets. The coding agent should assess if the token is expired, a test token, or contains sensitive claims.
 
 ---
 
@@ -197,13 +198,13 @@ Suspected secrets needing manual verification. Higher false-positive rate.
 
 - **Regex**: `(?i)(jwt|token)[\s_-]*(secret|key)\s*[:=]\s*['\"][^'\"]{8,}['\"]`
 - **Description**: Hardcoded JWT signing secret in a variable assignment. If real, allows forging valid tokens. Moved from High to Medium because variable assignments have a high false-positive rate (test values, placeholders).
-- **Source**: Custom pattern. Requires LLM verification of whether the value is a real secret or placeholder.
+- **Source**: Custom pattern. Requires agent verification of whether the value is a real secret or placeholder.
 
 ### Generic API Key Assignment
 
 - **Regex**: `(?i)(api[_-]?key|apikey|api[_-]?secret)\s*[:=]\s*['\"][0-9a-zA-Z]{16,}['\"]`
 - **Description**: Generic API key or secret in an assignment. May be a real key or a placeholder.
-- **Source**: Custom pattern. The LLM should check if the value looks random (real key) or structured (placeholder).
+- **Source**: Custom pattern. The coding agent should check if the value looks random (real key) or structured (placeholder).
 
 ### Generic Secret/Token Assignment
 
@@ -215,13 +216,13 @@ Suspected secrets needing manual verification. Higher false-positive rate.
 
 - **Regex**: `(?i)(secret|key|token|password)\s*[:=]\s*['\"][A-Za-z0-9+\/=]{40,}['\"]`
 - **Description**: Long base64-encoded string assigned to a secret-like variable name.
-- **Source**: Custom pattern. The length threshold (40+) reduces noise but still requires LLM verification.
+- **Source**: Custom pattern. The length threshold (40+) reduces noise but still requires agent verification.
 
 ### Private Key in Variable
 
 - **Regex**: `(?i)(private[_-]?key|priv[_-]?key)\s*[:=]\s*['\"][^'\"]{20,}['\"]`
 - **Description**: Private key content stored in a variable rather than a PEM file.
-- **Source**: Custom pattern. May overlap with PEM block detection — LLM should deduplicate.
+- **Source**: Custom pattern. May overlap with PEM block detection — the coding agent should deduplicate.
 
 ### Encryption Key/IV
 
