@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 TOOL_NAME = "security-audit"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 
 SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
 SEVERITY_PREFIX = {"CRITICAL": "C", "HIGH": "H", "MEDIUM": "M", "LOW": "L"}
@@ -60,6 +60,48 @@ def load_findings(filepath: str) -> list[dict]:
             except json.JSONDecodeError as e:
                 print(f"WARNING: Skipping malformed JSON on line {line_num}: {e}", file=sys.stderr)
     return findings
+
+
+def deduplicate_findings(findings: list[dict]) -> list[dict]:
+    """Remove exact duplicates and weaker heuristic matches at the same location."""
+    heuristic_ids = {"high-entropy", "generic-api-key", "generic-secret", "base64-secret"}
+    secret_ids = heuristic_ids | {
+        "aws-access-key", "private-key-block", "gcp-service-account", "gcp-api-key",
+        "stripe-secret-key", "azure-storage-key", "azure-ad-secret", "db-root-password",
+        "github-pat-classic", "github-pat-fine", "github-oauth", "gitlab-pat",
+        "gitlab-runner", "slack-bot-token", "slack-webhook", "sendgrid-key",
+        "twilio-key", "db-connection-string", "password-assignment", "heroku-key",
+        "mailgun-key", "npm-token", "rubygems-token", "openai-key",
+        "jwt-signing-secret", "private-key-var", "encryption-key",
+        "digitalocean-pat", "hashicorp-vault-token", "terraform-cloud-token",
+        "docker-hub-pat", "grafana-cloud-token", "grafana-service-account",
+        "shopify-private-app", "shopify-access-token", "shopify-shared-secret",
+        "anthropic-api-key", "linear-api-key", "planetscale-token", "figma-pat",
+        "digitalocean-oauth", "datadog-api-key", "discord-bot-token",
+    }
+
+    locations: dict[tuple[str, int], set[str]] = {}
+    for finding in findings:
+        key = (str(finding.get("file", "")), int(finding.get("line", 0)))
+        locations.setdefault(key, set()).add(str(finding.get("pattern_id", "")))
+
+    output = []
+    seen = set()
+    for finding in findings:
+        key = (str(finding.get("file", "")), int(finding.get("line", 0)))
+        pattern_id = str(finding.get("pattern_id", ""))
+        identity = (*key, pattern_id, str(finding.get("match", "")))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        stronger_secret = any(
+            candidate in secret_ids and candidate not in heuristic_ids
+            for candidate in locations[key]
+        )
+        if pattern_id in heuristic_ids and stronger_secret:
+            continue
+        output.append(finding)
+    return output
 
 
 def group_by_severity(findings: list[dict]) -> OrderedDict[str, list[dict]]:
@@ -106,8 +148,12 @@ def generate_markdown(findings: list[dict]) -> str:
     ]
 
     if total == 0:
-        lines.append("No security findings detected. The scanned files appear clean.")
-        return "\n".join(lines)
+        lines.extend([
+            "No security findings detected by this lightweight pattern scan.",
+            "",
+            "This is not proof that the codebase is vulnerability-free.",
+            "",
+        ])
 
     for sev in SEVERITY_ORDER:
         sev_findings = grouped[sev]
@@ -222,7 +268,7 @@ def generate_sarif(findings: list[dict]) -> dict:
         context = finding.get("context")
 
         # Generate a stable partial fingerprint for deduplication
-        fingerprint_source = f"{filepath}:{line_num}:{pid}"
+        fingerprint_source = f"{filepath}:{pid}:{match}"
         fingerprint = hashlib.sha256(fingerprint_source.encode()).hexdigest()[:16]
 
         # Build message text: include LLM context if available
@@ -426,7 +472,7 @@ def main() -> None:
         print(f"ERROR: Findings file not found: {findings_file}", file=sys.stderr)
         sys.exit(1)
 
-    findings = load_findings(findings_file)
+    findings = deduplicate_findings(load_findings(findings_file))
     print(f"Loaded {len(findings)} findings", file=sys.stderr)
 
     if output_format == "markdown":

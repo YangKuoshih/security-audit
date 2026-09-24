@@ -68,7 +68,7 @@ Same process as secret patterns, but add to `vulnerability-patterns.md` instead.
 
 1. Fork the repo and create a branch
 2. Make your changes
-3. Run `bash tests/test-e2e.sh` — all 58 tests must pass
+3. Run `bash tests/test-e2e.sh` — all tests must pass
 4. Submit a PR with a clear description of what you added and why
 
 ## License

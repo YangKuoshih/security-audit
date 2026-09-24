@@ -1,0 +1,6 @@
+interface:
+  display_name: "Security Audit"
+  short_description: "Scan repositories and triage security findings"
+  default_prompt: "Use $security-audit to scan this repository and prioritize the findings."
+policy:
+  allow_implicit_invocation: true

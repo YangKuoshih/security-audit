@@ -6,7 +6,7 @@
 </picture>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-83%20passing-brightgreen.svg)](#testing)
+[![Tests](https://github.com/YangKuoshih/security-audit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/YangKuoshih/security-audit/actions/workflows/tests.yml)
 [![Patterns](https://img.shields.io/badge/patterns-60%20rules-orange.svg)](skills/security-audit/scripts/patterns.dat)
 
 </div>
@@ -67,7 +67,7 @@ Files that should never be committed, regardless of contents: Terraform state (`
 
 ## Quick Start
 
-**Install globally (available in every project, across 41+ agents):**
+**Install globally for supported coding agents:**
 ```bash
 npx skills add YangKuoshih/security-audit -g --all
 ```
@@ -217,22 +217,24 @@ security-audit/
 │   └── plugin.json                     # Plugin manifest for Claude Code
 ├── skills/
 │   └── security-audit/                 # The distributable skill
-│       ├── SKILL.md                    # LLM orchestration and workflow
+│       ├── SKILL.md                    # Agent-neutral orchestration workflow
+│       ├── agents/openai.yaml          # Codex UI metadata and invocation policy
 │       ├── references/
-│       │   ├── secret-patterns.md      # 34 patterns (validated against GitLeaks)
+│       │   ├── secret-patterns.md      # Secret and dangerous-file guidance
 │       │   ├── vulnerability-patterns.md   # 15 patterns (OWASP Top 10)
 │       │   └── severity-guide.md       # Classification rules + adjustments
 │       ├── scripts/
 │       │   ├── scan-secrets.sh         # Bash scanner (grep, PCRE/ERE)
-│       │   ├── scan-secrets.py         # Python fallback + entropy detection
-│       │   ├── patterns.dat            # 44 compiled patterns for scanners
+│       │   ├── scan-secrets.py         # Preferred scanner + entropy detection
+│       │   ├── patterns.dat            # 60 compiled patterns for scanners
 │       │   └── generate-report.py      # Report generator (MD/SARIF/JSON)
 │       └── examples/
 │           ├── sample-report.md        # Example Markdown output
 │           ├── sample-report.sarif.json    # Example SARIF output
 │           └── security-audit.yml      # Example configuration
 ├── tests/
-│   ├── test-e2e.sh                     # 83-assertion integration test
+│   ├── test-e2e.sh                     # Portable test runner
+│   ├── test_e2e.py                     # 10 end-to-end regression tests
 │   └── fixtures/sample-repo/           # Test files with known secrets/vulns
 ├── docs/plans/                         # Design documents
 ├── LICENSE                             # Apache 2.0
@@ -242,20 +244,15 @@ security-audit/
 
 ## Testing
 
-> **Note:** The test suite (`tests/`) has been designed but not yet committed to this repository. The fixture files contain realistic fake credentials that require `.github/secret_scanning.yml` paths-ignore to commit safely — that config is already in place. Contributions to add `tests/test-e2e.sh` and `tests/fixtures/` are welcome.
-
-Once committed, run with:
+Run the dependency-free regression suite with:
 
 ```bash
 bash tests/test-e2e.sh
 ```
 
-Planned coverage:
-- Bash scanner (21 assertions) — pattern detection, safe file validation, output format, redaction
-- Python scanner (6 assertions) — parity with bash, entropy detection, safe file
-- Report generation (25 assertions) — Markdown structure, SARIF 2.1.0 compliance, JSON validity
-- Dangerous file detection (24 assertions) — all 15 file type patterns, output format, gitignore exclusion, bash/Python parity
-- Self-scan (1 assertion) — our own code contains zero Critical findings
+Current coverage includes Python and bash scanning, secret redaction, file exclusions,
+severity thresholds, strict incremental failures, incremental dangerous-file scope,
+deduplication, clean-report caveats, JSON, Markdown, and SARIF output.
 
 ## Design
 

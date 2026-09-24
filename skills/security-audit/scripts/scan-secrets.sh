@@ -153,7 +153,15 @@ if [[ -f "$TARGET_DIR" ]]; then
 elif [[ -n "$BASE_BRANCH" ]] && command -v git > /dev/null 2>&1 && git -C "$TARGET_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   # Incremental mode
   echo "Mode: incremental (base: $BASE_BRANCH)" >&2
-  git -C "$TARGET_DIR" diff --name-only --diff-filter=ACMR "${BASE_BRANCH}...HEAD" 2>/dev/null | while IFS= read -r f; do
+  if ! git -C "$TARGET_DIR" rev-parse --verify "${BASE_BRANCH}^{commit}" > /dev/null 2>&1; then
+    echo "ERROR: Cannot resolve incremental base branch: $BASE_BRANCH" >&2
+    exit 2
+  fi
+  {
+    git -C "$TARGET_DIR" diff --name-only --diff-filter=ACMR "${BASE_BRANCH}...HEAD"
+    git -C "$TARGET_DIR" diff --name-only --diff-filter=ACMR HEAD
+    git -C "$TARGET_DIR" ls-files --others --exclude-standard
+  } 2>/dev/null | sort -u | while IFS= read -r f; do
     [[ -f "${TARGET_DIR%/}/$f" ]] && echo "${TARGET_DIR%/}/$f"
   done > "$FILE_LIST"
 elif command -v git > /dev/null 2>&1 && git -C "$TARGET_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
@@ -218,7 +226,7 @@ if [[ "$OUTPUT_FILE" != "/dev/stdout" && "$OUTPUT_FILE" != "-" ]]; then
   > "$OUTPUT_FILE"
 fi
 
-echo "security-audit scanner v0.1.0" >&2
+echo "security-audit scanner v0.2.0" >&2
 echo "Target: $TARGET_DIR" >&2
 echo "Grep mode: $GREP_MODE" >&2
 

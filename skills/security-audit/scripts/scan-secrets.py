@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-scan-secrets.py — Pattern-based secret and vulnerability scanner (Python fallback)
+scan-secrets.py — Pattern-based secret and vulnerability scanner
 
-Part of the security-audit skill. This is the fallback scanner used when bash/grep
-is unavailable or when entropy-based detection is needed.
+Part of the security-audit skill. This is the preferred scanner; it includes
+entropy detection and the full filtering option set.
 
 Usage:
     python3 scan-secrets.py --target <dir> --patterns <file> --output <file> [options]
@@ -23,6 +23,7 @@ Output: JSON Lines format, one finding per line.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import math
 import os
@@ -31,6 +32,10 @@ import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+
+TOOL_VERSION = "0.2.0"
+SEVERITY_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -202,10 +207,15 @@ def get_file_list(
     target: str,
     base_branch: str | None,
     exclude_dirs: set[str],
+    exclude_files: list[str] | None = None,
+    max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
 ) -> list[str]:
     """Build list of files to scan."""
 
-    target_path = Path(target).resolve()
+    requested_path = Path(target)
+    if requested_path.is_symlink():
+        raise RuntimeError("refusing to scan a symlink target")
+    target_path = requested_path.resolve()
 
     # Single file mode
     if target_path.is_file():
@@ -224,22 +234,36 @@ def get_file_list(
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
+    if base_branch and not git_available:
+        raise RuntimeError("incremental mode requires a git repository")
+
     if base_branch and git_available:
         # Incremental mode
         print(f"Mode: incremental (base: {base_branch})", file=sys.stderr)
         try:
-            result = subprocess.run(
-                ["git", "-C", str(target_path), "diff", "--name-only",
-                 "--diff-filter=ACMR", f"{base_branch}...HEAD"],
-                capture_output=True, text=True, timeout=30,
-            )
-            for line in result.stdout.strip().splitlines():
+            changed_paths: set[str] = set()
+            commands = [
+                ["diff", "--name-only", "--diff-filter=ACMR", f"{base_branch}...HEAD"],
+                ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"],
+                ["ls-files", "--others", "--exclude-standard"],
+            ]
+            for command in commands:
+                result = subprocess.run(
+                    ["git", "-C", str(target_path), *command],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if result.returncode != 0:
+                    detail = result.stderr.strip() or f"git {command[0]} failed"
+                    raise RuntimeError(
+                        f"cannot compare against base branch {base_branch!r}: {detail}"
+                    )
+                changed_paths.update(result.stdout.strip().splitlines())
+            for line in sorted(changed_paths):
                 fullpath = target_path / line
-                if fullpath.is_file():
+                if fullpath.is_file() and not fullpath.is_symlink():
                     files.append(str(fullpath))
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            print("WARNING: git diff failed, falling back to full scan", file=sys.stderr)
-            git_available = False
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"incremental git diff failed: {exc}") from exc
 
     if not files and git_available and not base_branch:
         # Full scan with git ls-files
@@ -250,9 +274,12 @@ def get_file_list(
                  "--cached", "--others", "--exclude-standard"],
                 capture_output=True, text=True, timeout=30,
             )
+            if result.returncode != 0:
+                detail = result.stderr.strip() or "git ls-files failed"
+                raise RuntimeError(detail)
             for line in result.stdout.strip().splitlines():
                 fullpath = target_path / line
-                if fullpath.is_file():
+                if fullpath.is_file() and not fullpath.is_symlink():
                     files.append(str(fullpath))
         except (FileNotFoundError, subprocess.TimeoutExpired):
             git_available = False
@@ -268,10 +295,29 @@ def get_file_list(
 
     # Filter files
     filtered = []
+    exclude_files = exclude_files or []
     for filepath in files:
         # Check excluded directories (for git-based lists that don't prune)
         parts = Path(filepath).parts
         if any(part in exclude_dirs for part in parts):
+            continue
+        path = Path(filepath)
+        if path.is_symlink():
+            continue
+        try:
+            if path.stat().st_size > max_file_bytes:
+                continue
+        except OSError:
+            continue
+
+        try:
+            relative = Path(filepath).resolve().relative_to(target_path).as_posix()
+        except ValueError:
+            relative = Path(filepath).name
+        if any(
+            fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(Path(relative).name, pattern)
+            for pattern in exclude_files
+        ):
             continue
 
         # Skip binary files
@@ -296,30 +342,35 @@ class Pattern:
         self.compiled = compiled  # precompiled for performance across many files
 
 
-def load_patterns(patterns_file: str) -> list[Pattern]:
-    """Load and precompile patterns from tab-delimited patterns.dat file."""
-    patterns = []
-    with open(patterns_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.rstrip("\n\r")
-            if not line or line.startswith("#"):
-                continue
+def load_patterns(patterns_files: list[str]) -> list[Pattern]:
+    """Load patterns, allowing later files to override an existing pattern ID."""
+    patterns_by_id: dict[str, Pattern] = {}
+    for patterns_file in patterns_files:
+        with open(patterns_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.rstrip("\n\r")
+                if not line or line.startswith("#"):
+                    continue
 
-            parts = line.split("\t", 3)
-            if len(parts) != 4:
-                print(f"WARNING: Skipping malformed pattern line: {line!r}", file=sys.stderr)
-                continue
+                parts = line.split("\t", 3)
+                if len(parts) != 4:
+                    print(f"WARNING: Skipping malformed pattern line: {line!r}", file=sys.stderr)
+                    continue
 
-            severity, pattern_id, name, regex = parts
-            try:
-                compiled = re.compile(regex)
-            except re.error as e:
-                print(f"WARNING: Invalid regex for {pattern_id}: {e}", file=sys.stderr)
-                continue
+                severity, pattern_id, name, regex = parts
+                try:
+                    compiled = re.compile(regex)
+                except re.error as e:
+                    print(f"WARNING: Invalid regex for {pattern_id}: {e}", file=sys.stderr)
+                    continue
 
-            patterns.append(Pattern(severity, pattern_id, name, regex, compiled))
+                severity = severity.upper()
+                if severity not in SEVERITY_RANK:
+                    print(f"WARNING: Invalid severity for {pattern_id}: {severity}", file=sys.stderr)
+                    continue
+                patterns_by_id[pattern_id] = Pattern(severity, pattern_id, name, regex, compiled)
 
-    return patterns
+    return list(patterns_by_id.values())
 
 
 # ─── Redaction ──────────────────────────────────────────────────────────────
@@ -414,7 +465,7 @@ def make_relative(filepath: str, target: str) -> str:
 # ─── Dangerous File Type Scanning ─────────────────────────────────────────
 
 
-def scan_dangerous_files(target: str) -> list[dict]:
+def scan_dangerous_files(target: str, allowed_files: set[str] | None = None) -> list[dict]:
     """Scan for dangerous file types tracked by git.
 
     Single-pass: iterates tracked files once, matching all patterns per file
@@ -459,6 +510,14 @@ def scan_dangerous_files(target: str) -> list[dict]:
         ".db": ("dangerous-file-db", "Database File Committed", "MEDIUM"),
     }
     _SECRET_EXCLUDED_EXT = {".example", ".sample", ".template", ".md"}
+    _SECRET_SAFE_NAMES = {
+        "secret_scanning.yml", "secret_scanning.yaml", ".secrets.baseline",
+        ".secretlintrc", ".secretlintrc.json",
+    }
+    _SECRET_LIKELY_EXT = {
+        "", ".env", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+        ".conf", ".properties", ".txt", ".xml",
+    }
 
     def _emit(filepath: str, pid: str, pname: str, sev: str) -> None:
         findings.append({
@@ -472,6 +531,8 @@ def scan_dangerous_files(target: str) -> list[dict]:
 
     for filepath in tracked_files:
         if not filepath:
+            continue
+        if allowed_files is not None and filepath not in allowed_files:
             continue
 
         basename = Path(filepath).name
@@ -516,9 +577,9 @@ def scan_dangerous_files(target: str) -> list[dict]:
             matched = True
 
         # *secret* in filename (excluding safe extensions)
-        if not matched and "secret" in lower_base:
+        if not matched and "secret" in lower_base and lower_base not in _SECRET_SAFE_NAMES:
             ext = Path(lower_base).suffix
-            if ext not in _SECRET_EXCLUDED_EXT:
+            if ext not in _SECRET_EXCLUDED_EXT and ext in _SECRET_LIKELY_EXT:
                 _emit(filepath, "dangerous-file-secret-name", "Possible Secrets File Committed", "MEDIUM")
 
     return findings
@@ -531,6 +592,8 @@ def write_findings(
 ) -> None:
     """Write findings as JSON Lines."""
     out = sys.stdout if output_path in ("-", "/dev/stdout") else open(output_path, "w", encoding="utf-8")
+    if out is not sys.stdout:
+        os.chmod(output_path, 0o600)
 
     try:
         for finding in findings:
@@ -546,20 +609,31 @@ def write_findings(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pattern-based secret and vulnerability scanner (Python fallback)",
+        description="Pattern-based secret and vulnerability scanner",
     )
     parser.add_argument("--target", required=True, help="Directory or file to scan")
     parser.add_argument("--patterns", required=True, help="Tab-delimited patterns file")
+    parser.add_argument("--extra-patterns", action="append", default=[],
+                        help="Additional patterns file; repeatable, later IDs override earlier ones")
     parser.add_argument("--output", required=True, help="Output file (use - for stdout)")
     parser.add_argument("--base-branch", default=None, help="Base branch for incremental scan")
     parser.add_argument("--exclude-dirs", default="", help="Comma-separated extra exclude dirs")
+    parser.add_argument("--exclude-files", default="",
+                        help="Comma-separated glob patterns to exclude")
+    parser.add_argument("--severity-min", default="low",
+                        choices=("low", "medium", "high", "critical"),
+                        help="Minimum severity to emit (default: low)")
+    parser.add_argument("--no-dangerous-files", action="store_true",
+                        help="Disable tracked dangerous-file detection")
+    parser.add_argument("--max-file-bytes", type=int, default=DEFAULT_MAX_FILE_BYTES,
+                        help="Skip files larger than this many bytes (default: 5242880)")
     parser.add_argument("--entropy", dest="entropy", action="store_true", default=True,
                         help="Enable entropy detection (default)")
     parser.add_argument("--no-entropy", dest="entropy", action="store_false",
                         help="Disable entropy detection")
     args = parser.parse_args()
 
-    print("security-audit scanner v0.1.0 (Python)", file=sys.stderr)
+    print(f"security-audit scanner v{TOOL_VERSION} (Python)", file=sys.stderr)
     print(f"Target: {args.target}", file=sys.stderr)
     print(f"Patterns: {args.patterns}", file=sys.stderr)
     print(f"Entropy detection: {'on' if args.entropy else 'off'}", file=sys.stderr)
@@ -579,13 +653,27 @@ def main() -> None:
     if not os.path.isfile(args.patterns):
         print(f"ERROR: Patterns file not found: {args.patterns}", file=sys.stderr)
         sys.exit(1)
+    for extra_patterns in args.extra_patterns:
+        if not os.path.isfile(extra_patterns):
+            print(f"ERROR: Extra patterns file not found: {extra_patterns}", file=sys.stderr)
+            sys.exit(1)
+    if args.max_file_bytes <= 0:
+        print("ERROR: --max-file-bytes must be greater than zero", file=sys.stderr)
+        sys.exit(1)
 
     # Load patterns
-    patterns = load_patterns(args.patterns)
+    patterns = load_patterns([args.patterns, *args.extra_patterns])
     print(f"Patterns loaded: {len(patterns)}", file=sys.stderr)
 
     # Build file list
-    files = get_file_list(args.target, args.base_branch, exclude_dirs)
+    exclude_files = [item.strip() for item in args.exclude_files.split(",") if item.strip()]
+    try:
+        files = get_file_list(
+            args.target, args.base_branch, exclude_dirs, exclude_files, args.max_file_bytes,
+        )
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
     print(f"Files to scan: {len(files)}", file=sys.stderr)
 
     # Scan all files
@@ -595,9 +683,25 @@ def main() -> None:
         all_findings.extend(file_findings)
 
     # Scan for dangerous file types (between pattern scan and output)
-    dangerous_findings = scan_dangerous_files(args.target)
+    incremental_files = None
+    if args.base_branch:
+        target_path = Path(args.target).resolve()
+        incremental_files = {
+            Path(filepath).resolve().relative_to(target_path).as_posix()
+            for filepath in files
+        }
+    dangerous_findings = (
+        [] if args.no_dangerous_files
+        else scan_dangerous_files(args.target, incremental_files)
+    )
     print(f"Dangerous file types found: {len(dangerous_findings)}", file=sys.stderr)
     all_findings.extend(dangerous_findings)
+
+    minimum_rank = SEVERITY_RANK[args.severity_min.upper()]
+    all_findings = [
+        finding for finding in all_findings
+        if SEVERITY_RANK.get(finding.get("severity", "MEDIUM").upper(), 1) >= minimum_rank
+    ]
 
     # Write output
     write_findings(all_findings, args.output, args.target)
