@@ -862,6 +862,22 @@ def main() -> None:
     patterns = load_patterns([args.patterns, *args.extra_patterns])
     print(f"Patterns loaded: {len(patterns)}", file=sys.stderr)
 
+    # A scan with no patterns finds nothing and would otherwise report a clean
+    # result, so a mistyped --patterns path becomes a silent false negative -
+    # the worst failure mode a security scanner can have. Refuse to run instead.
+    if not patterns:
+        print(
+            "ERROR: No usable patterns were loaded. Refusing to scan, because a "
+            "pattern-less scan always reports zero findings and would look clean.\n"
+            f"       Patterns file: {args.patterns}\n"
+            "       Expected a tab-separated .dat file with 4 fields per line: "
+            "SEVERITY<TAB>pattern-id<TAB>name<TAB>regex\n"
+            "       (the Markdown files in references/ are documentation, not "
+            "pattern files - use scripts/patterns.dat).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Build file list
     exclude_files = [item.strip() for item in args.exclude_files.split(",") if item.strip()]
     try:

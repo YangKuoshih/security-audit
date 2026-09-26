@@ -409,6 +409,34 @@ class ScannerTests(unittest.TestCase):
             self.assertEqual(len(unsafe), 1)
             self.assertEqual(unsafe[0]["line"], 2)
 
+    def test_scan_fails_loudly_when_no_patterns_load(self) -> None:
+        """A pattern file the loader cannot parse must abort, not report a clean scan.
+
+        Passing a path that yields zero usable patterns (for example one of the
+        Markdown files in references/, which are documentation rather than
+        pattern data) previously scanned every file against nothing, printed
+        "Findings: 0" and exited 0 - a silent false negative.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            (target / "leak.py").write_text('AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+            bad_patterns = target / "not-patterns.md"
+            bad_patterns.write_text("# Heading\n\n- **Pattern**: `something`\n")
+            output = target / "findings.jsonl"
+
+            result = run(
+                sys.executable, str(PY_SCANNER),
+                "--target", str(target),
+                "--patterns", str(bad_patterns),
+                "--output", str(output),
+            )
+
+            self.assertNotEqual(result.returncode, 0, "expected a non-zero exit")
+            self.assertIn("No usable patterns", result.stderr)
+            # It must not have produced a findings file implying a clean result.
+            if output.exists():
+                self.assertEqual(read_jsonl(output), [])
+
 
 class ReportTests(unittest.TestCase):
     def test_report_deduplicates_weaker_secret_heuristics(self) -> None:
