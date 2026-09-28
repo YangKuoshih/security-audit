@@ -25,7 +25,7 @@ Every leaked secret starts the same way — a key hardcoded "just for testing" t
 <tr>
 <td width="50%">
 
-**Secrets** — vendor signatures and high-signal heuristics informed by [GitLeaks](https://github.com/gitleaks/gitleaks)
+**Secrets** — 46 patterns covering vendor signatures and high-signal heuristics informed by [GitLeaks](https://github.com/gitleaks/gitleaks)
 
 - AWS, GCP, Azure credentials
 - GitHub, GitLab, Slack tokens
