@@ -1,25 +1,65 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/header-dark.svg">
-  <img alt="security-audit — Find secrets before attackers do." src="assets/header.svg" width="680">
-</picture>
+<img alt="security-audit: scan locally, triage clearly, fix what matters" src="assets/header.svg" width="1200">
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Tests](https://github.com/YangKuoshih/security-audit/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/YangKuoshih/security-audit/actions/workflows/tests.yml)
-[![Patterns](https://img.shields.io/badge/patterns-60%20rules-orange.svg)](skills/security-audit/scripts/patterns.dat)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 </div>
 
----
+# security-audit
 
-## Why
+A local security skill for coding agents. It scans for leaked credentials, risky tracked files, and common source-level vulnerability patterns. Deterministic checks produce redacted findings; the agent helps validate context and explain the next fix.
 
-Every leaked secret starts the same way — a key hardcoded "just for testing" that makes it to production. Existing tools catch some of these, but they're standalone binaries that don't understand your code's context.
+## Run a scan
 
-**security-audit** combines deterministic pattern scanning and context-aware triage with agent reasoning. The scanner removes common noise consistently; the coding agent validates the remaining source-level risks and explains what to fix.
+Install for supported coding agents:
 
-## What It Catches
+```bash
+npx skills add YangKuoshih/security-audit -g --all
+```
+
+Then, in a project, ask your agent to run:
+
+```text
+/security-audit
+/security-audit --incremental
+/security-audit --format sarif
+/security-audit --severity high
+/security-audit --path src/
+```
+
+Install only in the current project with `npx skills add YangKuoshih/security-audit`. For Claude Code plugin use, [clone the repository](https://github.com/YangKuoshih/security-audit) and run `claude --plugin-dir /path/to/security-audit` from the project you want to scan.
+
+| Detect | Triage | Deliver |
+| --- | --- | --- |
+| Secrets, risky tracked files, and code patterns | Redact matches and check context | Actionable Markdown, JSON, or SARIF |
+
+<details>
+<summary>See an example finding</summary>
+
+```text
+[C-001] AWS Access Key ID
+File: src/config/aws.js:8
+Match: AKIA...MPLE
+Action: Remove the key, rotate it, and check where it was used.
+```
+
+This is illustrative output. The scanner redacts matches before agent review.
+
+</details>
+
+For CI, run the Python scanner directly. It writes redacted JSONL before returning exit code `3` when the configured threshold is met:
+
+```bash
+python3 skills/security-audit/scripts/scan-secrets.py \
+  --target . \
+  --patterns skills/security-audit/scripts/patterns.dat \
+  --output security-findings.jsonl \
+  --fail-on high
+```
+
+## What it checks
 
 <table>
 <tr>
@@ -65,77 +105,11 @@ Files that should never be committed, regardless of contents: Terraform state (`
 </tr>
 </table>
 
-## Quick Start
+## How it works
 
-**Install globally for supported coding agents:**
-```bash
-npx skills add YangKuoshih/security-audit -g --all
-```
-
-**Or install per-project:**
-```bash
-npx skills add YangKuoshih/security-audit
-```
-
-**Or use directly as a Claude Code plugin:**
-```bash
-git clone https://github.com/YangKuoshih/security-audit.git
-
-# From any project directory
-claude --plugin-dir /path/to/security-audit
-```
-
-**Run it:**
-```
-/security-audit                    # full scan, markdown output
-/security-audit --incremental      # changed files only (git diff)
-/security-audit --format sarif     # SARIF 2.1.0 for GitHub Code Scanning
-/security-audit --severity high    # Critical + High only
-/security-audit --path src/        # target specific directory
-```
-
-For CI, the Python scanner can enforce a policy after safely writing its output:
-
-```bash
-python3 skills/security-audit/scripts/scan-secrets.py \
-  --target . \
-  --patterns skills/security-audit/scripts/patterns.dat \
-  --output security-findings.jsonl \
-  --fail-on high
-```
-
-Exit code `3` means the configured finding threshold was met; scanner/configuration
-errors use a different non-zero exit code.
-
-## How It Works
-
-```
-              ┌─────────────────────────────────────────────────┐
-              │              /security-audit                     │
-              └────────────────────┬────────────────────────────┘
-                                   │
-               ┌───────────────┬───┴───┬───────────────┐
-               ▼               ▼       ▼               ▼
-        ┌─────────────┐ ┌──────────┐ ┌──────────┐ ┌─────────────┐
-        │   Phase 1   │ │ Phase 2  │ │Phase 2b  │ │   Phase 3   │
-        │   Setup     │ │ Scan     │ │ File     │ │   Analyze   │
-        │             │ │          │ │ Types    │ │             │
-        │ Detect env  │ │ 60 regex │ │ 15 file  │ │Agent review │
-        │ Load config │ │ + context│ │ patterns │ │of remaining │
-        │ Build file  │ │ +entropy │ │ via git  │ │ Correlates  │
-        │ list        │ │detection │ │ ls-files │ │ + exec sum  │
-        └──────┬──────┘ └────┬─────┘ └────┬─────┘ └──────┬──────┘
-               │             │            │               │
-               └─────────────┴─────┬──────┴───────────────┘
-                                   ▼
-                        ┌─────────────────────┐
-                        │      Phase 4        │
-                        │      Report         │
-                        │                     │
-                        │  Markdown / SARIF   │
-                        │  / JSON output      │
-                        └─────────────────────┘
-```
+| 01 / Scope | 02 / Scan | 03 / Triage | 04 / Report |
+| --- | --- | --- | --- |
+| Detect the environment and collect candidate files. | Apply local patterns, context rules, entropy checks, and tracked-file checks. | Review redacted candidates and validate source-level risks. | Produce Markdown, JSON, or SARIF with concrete remediation. |
 
 **Shell available?** Runs `scan-secrets.py` (Python, preferred for production) or `scan-secrets.sh` (reduced bash/grep fallback). The Python scanner applies deterministic context rules, entropy detection, complete-PEM validation, user-controlled SSRF checks, and dangerous-file detection via `git ls-files`. The agent then validates only the remaining redacted candidates.
 

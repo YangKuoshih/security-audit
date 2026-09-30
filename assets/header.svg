@@ -1,24 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 130" width="680" height="130">
-  <!-- Shield icon -->
-  <path d="M36.4,15 L57.7,23.5 L57.7,51.7 C57.7,68.8 47,79 36.4,85 C25.7,79 15,68.8 15,51.7 L15,23.5 Z"
-        fill="rgba(9,105,218,0.08)" stroke="#0969da" stroke-width="2.5"
-        stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M26.1,51.9 L32.9,58.6 L46.6,42.3"
-        fill="none" stroke="#0969da" stroke-width="2.5"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Title -->
-  <text x="78" y="58"
-        font-family="'Courier New', Courier, monospace"
-        font-size="40" font-weight="700"
-        fill="#1f2328" letter-spacing="1">security-audit</text>
-  <!-- Subtitle -->
-  <text x="78" y="86"
-        font-family="Arial, 'Helvetica Neue', sans-serif"
-        font-size="16" fill="#57606a">Find secrets before attackers do.</text>
-  <!-- Separator -->
-  <line x1="78" y1="100" x2="658" y2="100" stroke="#d0d7de" stroke-width="1"/>
-  <!-- Platform line -->
-  <text x="78" y="119"
-        font-family="Arial, 'Helvetica Neue', sans-serif"
-        font-size="13" fill="#8c959f">Claude Code · Cursor · Windsurf · Cline · works on any AI agent platform</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">security-audit</title>
+  <desc id="desc">Local code security scanning with redacted findings and practical remediation.</desc>
+  <rect width="1200" height="480" rx="20" fill="#1d3026"/>
+  <path d="M0 420H1200M690 0V480" stroke="#b5c1b5" stroke-opacity=".17"/>
+
+  <g font-family="'Courier New',monospace" font-size="13">
+    <rect x="62" y="49" width="10" height="10" fill="#e28b68"/>
+    <text x="86" y="59" fill="#b9c8bb">OPEN SOURCE / LOCAL SECURITY</text>
+    <text x="1080" y="59" fill="#83978a">01—04</text>
+  </g>
+
+  <text x="59" y="186" fill="#f2eee3" font-family="'Helvetica Neue',Arial,sans-serif" font-size="80" font-weight="700">security</text>
+  <text x="58" y="279" fill="#e9a17f" font-family="Georgia,serif" font-size="102" font-style="italic">audit.</text>
+  <text x="64" y="337" fill="#d3dcd1" font-family="'Helvetica Neue',Arial,sans-serif" font-size="22">Scan locally. Triage clearly.</text>
+  <text x="64" y="367" fill="#d3dcd1" font-family="'Helvetica Neue',Arial,sans-serif" font-size="22">Fix what matters.</text>
+
+  <g font-family="'Courier New',monospace" font-size="12">
+    <text x="64" y="454" fill="#9db0a2">SECRETS</text><circle cx="150" cy="449" r="2" fill="#e28b68"/>
+    <text x="164" y="454" fill="#9db0a2">RISKY FILES</text><circle cx="288" cy="449" r="2" fill="#e28b68"/>
+    <text x="302" y="454" fill="#9db0a2">SOURCE PATTERNS</text>
+  </g>
+
+  <g transform="translate(736 104)">
+    <rect width="404" height="312" rx="14" fill="#101a16" stroke="#607668" stroke-opacity=".7"/>
+    <path d="M0 52H404" stroke="#607668" stroke-opacity=".55"/>
+    <circle cx="25" cy="26" r="4" fill="#e28b68"/><circle cx="41" cy="26" r="4" fill="#607668"/><circle cx="57" cy="26" r="4" fill="#607668"/>
+    <text x="78" y="31" fill="#becbc0" font-family="'Courier New',monospace" font-size="13">audit / illustrative output</text>
+
+    <rect x="24" y="75" width="86" height="25" rx="4" fill="#673b30"/>
+    <text x="35" y="92" fill="#f6b69c" font-family="'Courier New',monospace" font-size="11" font-weight="700">CRITICAL</text>
+    <text x="126" y="92" fill="#f0eee6" font-family="'Helvetica Neue',Arial,sans-serif" font-size="17" font-weight="600">Credential in source</text>
+    <text x="25" y="125" fill="#91a99a" font-family="'Courier New',monospace" font-size="13">src/config.ts:42</text>
+    <text x="25" y="150" fill="#c3d0c4" font-family="'Courier New',monospace" font-size="14">match: [REDACTED]</text>
+    <path d="M24 173H380" stroke="#46594e"/>
+
+    <rect x="24" y="192" width="86" height="25" rx="4" fill="#394d42"/>
+    <text x="43" y="209" fill="#bfdac4" font-family="'Courier New',monospace" font-size="11" font-weight="700">REVIEW</text>
+    <text x="126" y="209" fill="#f0eee6" font-family="'Helvetica Neue',Arial,sans-serif" font-size="17" font-weight="600">Input reaches a sink</text>
+    <text x="25" y="243" fill="#91a99a" font-family="'Courier New',monospace" font-size="13">src/api.ts:88</text>
+    <path d="M24 264H380" stroke="#46594e"/>
+    <circle cx="30" cy="286" r="4" fill="#82b995"/>
+    <text x="44" y="291" fill="#a5bba9" font-family="'Courier New',monospace" font-size="12">LOCAL SCAN · REDACTED RESULTS</text>
+  </g>
 </svg>
